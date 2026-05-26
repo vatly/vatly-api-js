@@ -47,6 +47,9 @@
     "lint": "biome check src",
     "format": "biome format --write src"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": ["@biomejs/biome", "esbuild"]
+  },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
     "@types/node": "^20.14.0",
