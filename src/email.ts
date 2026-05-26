@@ -8,7 +8,7 @@
  * TODO(sander): choose a final implementation. Node has `url.domainToASCII()`
  * but it is NOT guaranteed on edge runtimes (Cloudflare Workers, Vercel Edge).
  * The current implementation uses the WHATWG `URL` parser, which IS spec'd
- * to apply UTS-46 / Punycode to hostnames and is available on Node 18+,
+ * to apply UTS-46 / Punycode to hostnames and is available on Node 20+,
  * Workers, Vercel Edge, Deno, and the browser. If we later find a runtime
  * that doesn't honor IDN in URL hostnames, swap to the `punycode/` userland
  * package or `tr46`.

@@ -13,7 +13,7 @@ const API_KEY_REGEX = /^(live|test)_[\w|]{18,}$/;
 /**
  * Function that produces an Idempotency-Key value. Called once per mutating
  * request that doesn't already have a caller-supplied key. The default uses
- * `crypto.randomUUID()`, available on Node 18+, Workers, Vercel Edge, Deno,
+ * `crypto.randomUUID()`, available on Node 20+, Workers, Vercel Edge, Deno,
  * and Bun.
  */
 export type IdempotencyKeyGenerator = () => string;
@@ -142,7 +142,7 @@ export function resolveConfig(options: VatlyClientOptions = {}): ResolvedConfig 
   const fetchImpl = options.fetch ?? globalThis.fetch;
   if (typeof fetchImpl !== "function") {
     throw new Error(
-      "Vatly: no `fetch` implementation found. Use Node 18+ or pass a custom `fetch`.",
+      "Vatly: no `fetch` implementation found. Use Node 20+ or pass a custom `fetch`.",
     );
   }
 
@@ -190,7 +190,7 @@ function defaultIdempotencyKeyGenerator(): string {
   }
   throw new Error(
     "Vatly: `crypto.randomUUID()` is unavailable. Provide a custom " +
-      "`idempotencyKeyGenerator` or upgrade to Node 18.4+ / an edge runtime " +
+      "`idempotencyKeyGenerator` or upgrade to Node 20+ / an edge runtime " +
       "that exposes Web Crypto.",
   );
 }
