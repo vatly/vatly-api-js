@@ -81,12 +81,16 @@ describe("http", () => {
       expect(calls[0]!.headers["idempotency-key"]).toBeUndefined();
     });
 
-    it("does NOT auto-generate for DELETE (HTTP-spec idempotent)", async () => {
+    it("auto-generates a key for DELETE by default", async () => {
+      // The vatlify API honors Idempotency-Key on DELETE per its middleware's
+      // ALLOWED_METHODS (POST, PATCH, PUT, DELETE), so we auto-key DELETE too.
       // 204 must have no body; spec.body=undefined → Response gets `null`.
       const { fetch, calls } = makeFetchSequence([{ status: 204 }]);
       const client = makeClient({ fetch });
       await client.subscriptions.cancel("subscription_1");
-      expect(calls[0]!.headers["idempotency-key"]).toBeUndefined();
+      expect(calls[0]!.headers["idempotency-key"]).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      );
     });
 
     it("custom generator is invoked once per request", async () => {
@@ -216,6 +220,18 @@ describe("http", () => {
       ]);
       const client = makeClient({ fetch, maxRetries: 2 });
       await client.checkouts.create(aCreateCheckoutRequest());
+      expect(calls.length).toBe(2);
+      // Same key on retry — required for the server to dedupe.
+      expect(calls[0]!.headers["idempotency-key"]).toBe(calls[1]!.headers["idempotency-key"]);
+    });
+
+    it("DOES retry DELETE by default (auto-keyed)", async () => {
+      const { fetch, calls } = makeFetchSequence([
+        { status: 503, body: { message: "down" } },
+        { status: 204 },
+      ]);
+      const client = makeClient({ fetch, maxRetries: 2 });
+      await client.subscriptions.cancel("subscription_1");
       expect(calls.length).toBe(2);
       // Same key on retry — required for the server to dedupe.
       expect(calls[0]!.headers["idempotency-key"]).toBe(calls[1]!.headers["idempotency-key"]);

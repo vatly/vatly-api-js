@@ -93,13 +93,13 @@ The Vatly `Error` schema is `{ message: string }` only (`ValidationError` adds
 - Exponential backoff with jitter on `429`, `5xx`, and network failures.
 - `Retry-After` (seconds) is respected.
 - Default `maxRetries: 2`.
-- **Every POST and PATCH automatically receives an `Idempotency-Key`** (a UUID
-  v4 from `crypto.randomUUID()`). This matches the PHP SDK's default behavior
-  and makes mutating calls safe to retry out of the box.
+- **Every POST, PATCH, and DELETE automatically receives an `Idempotency-Key`**
+  (a UUID v4 from `crypto.randomUUID()`). The Vatly API dedupes on the key for
+  all mutating verbs, so retries are safe out of the box.
 - The auto-generated key is reused across retries of the same logical call —
   the server dedupes on it.
-- POST/PATCH without an `Idempotency-Key` (i.e. you opted out of auto-gen and
-  didn't supply one) are never retried.
+- Mutating calls without an `Idempotency-Key` (i.e. you opted out of auto-gen
+  and didn't supply one) are never retried.
 
 Override the key per call when you have your own request ID:
 
