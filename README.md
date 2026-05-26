@@ -2,7 +2,7 @@
 
 Official TypeScript SDK for the [Vatly](https://vatly.com) Merchant of Record API.
 
-- Runs on Node 18+, Cloudflare Workers, Vercel Edge, and Deno.
+- Runs on Node 20+, Cloudflare Workers, Vercel Edge, and Deno.
 - Types generated from the OpenAPI spec; client is hand-written.
 - Zero browser build — handles secret keys.
 - Native `fetch`. No `axios`, no `node-fetch`, no `node:crypto`.

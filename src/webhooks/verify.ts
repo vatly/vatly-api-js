@@ -25,7 +25,7 @@
  * will ship `v1=...,v2=...` simultaneously. We verify any version we recognize
  * (first match wins) and ignore unknown slots.
  *
- * Uses Web Crypto so the same code runs on Node 18+, Workers, Vercel Edge,
+ * Uses Web Crypto so the same code runs on Node 20+, Workers, Vercel Edge,
  * Deno, and Bun. `node:crypto` is deliberately NOT used.
  */
 
@@ -286,7 +286,7 @@ async function computeHmacHex(input: Uint8Array, secret: string): Promise<string
   if (!subtle) {
     throw new Error(
       "Vatly: globalThis.crypto.subtle is unavailable. " +
-        "Use Node 18+ or a runtime that exposes Web Crypto.",
+        "Use Node 20+ or a runtime that exposes Web Crypto.",
     );
   }
 
