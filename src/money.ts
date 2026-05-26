@@ -40,11 +40,7 @@ export function toMinorUnits(money: Money, decimals = 2): bigint {
  *
  * @example fromMinorUnits(2900n, "EUR") // -> { value: "29.00", currency: "EUR" }
  */
-export function fromMinorUnits(
-  minor: bigint | number,
-  currency: string,
-  decimals = 2,
-): Money {
+export function fromMinorUnits(minor: bigint | number, currency: string, decimals = 2): Money {
   const big = typeof minor === "bigint" ? minor : BigInt(Math.trunc(minor));
   if (big < 0n) {
     throw new RangeError("Money minor units cannot be negative.");

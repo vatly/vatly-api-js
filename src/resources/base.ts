@@ -1,6 +1,6 @@
 import type { ResolvedConfig } from "../config.js";
-import { performRequest, type RequestOptions, type RawRequest } from "../http.js";
-import { paginate, type ListParams, type PaginatedList } from "../pagination.js";
+import { type RawRequest, type RequestOptions, performRequest } from "../http.js";
+import { type ListParams, type PaginatedList, paginate } from "../pagination.js";
 
 /**
  * Base class for resource namespaces. Resources should be thin wrappers around

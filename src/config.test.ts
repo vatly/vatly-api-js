@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  buildClientInfoHeader,
-  detectMode,
-  detectRuntime,
-  resolveConfig,
-} from "./config.js";
+import { buildClientInfoHeader, detectMode, detectRuntime, resolveConfig } from "./config.js";
 
 // Matches ^(live|test)_[\w|]{18,}$ — at least 18 chars after the prefix.
 const VALID_LIVE_KEY = "live_abcdefghij0123456789";
@@ -71,6 +66,7 @@ describe("config", () => {
 
     it("throws on missing apiKey", () => {
       const prev = process.env.VATLY_API_KEY;
+      // biome-ignore lint/performance/noDelete: process.env.X = undefined coerces to the string "undefined"; only delete actually unsets.
       delete process.env.VATLY_API_KEY;
       try {
         expect(() => resolveConfig({})).toThrow(/missing API key/);
@@ -87,6 +83,7 @@ describe("config", () => {
         expect(cfg.apiKey).toBe(VALID_TEST_KEY);
         expect(cfg.mode).toBe("test");
       } finally {
+        // biome-ignore lint/performance/noDelete: see above.
         if (prev === undefined) delete process.env.VATLY_API_KEY;
         else process.env.VATLY_API_KEY = prev;
       }
@@ -106,9 +103,7 @@ describe("config", () => {
       const cfg = resolveConfig({ apiKey: VALID_TEST_KEY });
       expect(typeof cfg.idempotencyKeyGenerator).toBe("function");
       const v = cfg.idempotencyKeyGenerator?.();
-      expect(v).toMatch(
-        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
-      );
+      expect(v).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     });
 
     it("idempotencyKeyGenerator: false disables auto-gen", () => {
@@ -125,7 +120,7 @@ describe("config", () => {
     });
   });
 
-  describe("X-Vatly-Client-Info (B4)", () => {
+  describe("Vatly-Client-Info (B4)", () => {
     it("detectRuntime returns a node descriptor in vitest", () => {
       const d = detectRuntime();
       expect(d.runtime).toMatch(/^node\//);
@@ -133,48 +128,118 @@ describe("config", () => {
       expect(d.arch).toBeTypeOf("string");
     });
 
-    it("buildClientInfoHeader returns key=value; key=value with defaults", () => {
+    it("buildClientInfoHeader returns key=value; key=value with auto-detected defaults", () => {
       const h = buildClientInfoHeader(undefined);
       expect(h).toBeDefined();
       expect(h).toMatch(/sdk=vatly-sdk-js\/[\d.]+/);
       expect(h).toMatch(/runtime=node\//);
-      // pairs are `; `-separated
       expect(h!.split("; ").length).toBeGreaterThanOrEqual(2);
     });
 
-    it("merges user extras after defaults", () => {
+    it("appends app and framework after defaults when provided", () => {
       const h = buildClientInfoHeader({ app: "MyApp/1.2.3", framework: "Next.js/14" });
       expect(h).toContain("sdk=vatly-sdk-js/");
-      expect(h).toContain("app=MyApp/1.2.3");
-      expect(h).toContain("framework=Next.js/14");
+      expect(h).toMatch(/app=MyApp\/1\.2\.3; framework=Next\.js\/14$/);
     });
 
-    it("user extras override defaults of the same key", () => {
-      const h = buildClientInfoHeader({ runtime: "custom-runtime/9.9" });
-      expect(h).toContain("runtime=custom-runtime/9.9");
-      // and only once
+    it("does not allow overriding sdk/runtime/os/arch", () => {
+      // Even if a caller could squeeze unrelated keys in, the typed surface only
+      // accepts `app` and `framework`. Default `runtime` survives intact.
+      const h = buildClientInfoHeader({ app: "X/1" });
       expect(h!.match(/runtime=/g)!.length).toBe(1);
+      expect(h).toMatch(/runtime=node\//);
     });
 
-    it("undefined value in extras removes the default", () => {
-      const h = buildClientInfoHeader({ os: undefined });
-      expect(h).not.toContain("os=");
+    it("returns the defaults-only header when info is undefined", () => {
+      const h = buildClientInfoHeader(undefined);
+      expect(h).not.toContain("app=");
+      expect(h).not.toContain("framework=");
     });
 
-    it("returns undefined when extras === false", () => {
+    it("returns undefined when info === false", () => {
       expect(buildClientInfoHeader(false)).toBeUndefined();
     });
 
     it("sanitizes header-breaking chars in values", () => {
       const h = buildClientInfoHeader({ app: "Evil; injected, value\r\n" });
       expect(h).not.toContain(",");
-      // semicolons inside the value collapse to space; the only `; ` should be the pair separator
       expect(h).toContain("app=Evil injected value");
     });
 
-    it("sanitizes header-breaking chars in keys", () => {
-      const h = buildClientInfoHeader({ "ev;il=key": "v" });
-      expect(h).toContain("ev_il_key=v");
+    it("truncates oversized values to 64 chars", () => {
+      const long = "x".repeat(200);
+      const h = buildClientInfoHeader({ app: long });
+      const match = /app=([^;]+)/.exec(h ?? "");
+      expect(match).not.toBeNull();
+      expect(match![1]!.length).toBe(64);
+    });
+
+    it("skips empty / whitespace-only fields", () => {
+      const h = buildClientInfoHeader({ app: "  \r\n  ", framework: "" });
+      expect(h).not.toContain("app=");
+      expect(h).not.toContain("framework=");
+    });
+  });
+
+  describe("browser usage block", () => {
+    it("throws when window+document are defined and no opt-out", () => {
+      const g = globalThis as unknown as { window?: unknown; document?: unknown };
+      const prevWindow = g.window;
+      const prevDocument = g.document;
+      g.window = {};
+      g.document = {};
+      try {
+        expect(() => resolveConfig({ apiKey: VALID_TEST_KEY })).toThrow(
+          /must not be instantiated in a browser/,
+        );
+      } finally {
+        g.window = prevWindow;
+        g.document = prevDocument;
+      }
+    });
+
+    it("dangerouslyAllowBrowser bypasses the guard", () => {
+      const g = globalThis as unknown as { window?: unknown; document?: unknown };
+      const prevWindow = g.window;
+      const prevDocument = g.document;
+      g.window = {};
+      g.document = {};
+      try {
+        const cfg = resolveConfig({
+          apiKey: VALID_TEST_KEY,
+          dangerouslyAllowBrowser: true,
+        });
+        expect(cfg.apiKey).toBe(VALID_TEST_KEY);
+      } finally {
+        g.window = prevWindow;
+        g.document = prevDocument;
+      }
+    });
+
+    it("does not trip on jsdom/happy-dom (UA-guarded)", () => {
+      // navigator is a non-configurable global in modern Node; use defineProperty.
+      const g = globalThis as unknown as { window?: unknown; document?: unknown };
+      const prevWindow = g.window;
+      const prevDocument = g.document;
+      const prevDesc = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+      g.window = {};
+      g.document = {};
+      Object.defineProperty(globalThis, "navigator", {
+        value: { userAgent: "Mozilla/5.0 (linux) jsdom/22.0.0" },
+        configurable: true,
+        writable: true,
+      });
+      try {
+        expect(() => resolveConfig({ apiKey: VALID_TEST_KEY })).not.toThrow();
+      } finally {
+        g.window = prevWindow;
+        g.document = prevDocument;
+        if (prevDesc) {
+          Object.defineProperty(globalThis, "navigator", prevDesc);
+        } else {
+          (globalThis as { navigator?: unknown }).navigator = undefined;
+        }
+      }
     });
   });
 });

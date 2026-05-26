@@ -24,9 +24,7 @@ export interface ListParams {
   endingBefore?: string;
 }
 
-export type Pager<T, P extends ListParams = ListParams> = (
-  params: P,
-) => Promise<PaginatedList<T>>;
+export type Pager<T, P extends ListParams = ListParams> = (params: P) => Promise<PaginatedList<T>>;
 
 /**
  * Wrap a list method so callers can use `for await` to walk every item.

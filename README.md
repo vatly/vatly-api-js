@@ -119,31 +119,42 @@ new VatlyClient({ idempotencyKeyGenerator: false });
 
 ## Runtime identification
 
-Every request sends `X-Vatly-Client-Info` so the Vatly team can diagnose
+Every request sends `Vatly-Client-Info` so the Vatly team can diagnose
 issues without guessing what runtime you're on. The header is built once at
 client construction and reused for every request. Defaults are auto-detected:
 
 ```
-X-Vatly-Client-Info: sdk=vatly-sdk-js/0.1.0; runtime=node/v20.11.1; os=darwin; arch=arm64
+Vatly-Client-Info: sdk=vatly-sdk-js/0.2.0; runtime=node/v20.11.1; os=darwin; arch=arm64
 ```
 
 The SDK recognizes Node, Bun, Deno, Cloudflare Workers, and Vercel Edge.
-Identify your application by passing extra fragments — merged on top of (and
-able to override) the defaults:
+Identify your application:
 
 ```ts
 new VatlyClient({
   clientInfo: {
     app: "MyApp/1.2.3",
     framework: "Next.js/14",
-    region: process.env.VERCEL_REGION,
   },
 });
-// X-Vatly-Client-Info: sdk=vatly-sdk-js/0.1.0; runtime=node/v20.11.1; os=linux; arch=x64; app=MyApp/1.2.3; framework=Next.js/14; region=iad1
+// Vatly-Client-Info: sdk=vatly-sdk-js/0.2.0; runtime=node/v20.11.1; os=linux; arch=x64; app=MyApp/1.2.3; framework=Next.js/14
 ```
 
-Pass `clientInfo: false` to omit the header. Set a fragment to `undefined` to
-delete a default (e.g. `{ os: undefined }`).
+The supported fields are `app` and `framework`, each capped at 64 characters
+(over-long values are truncated; header-breaking chars are stripped). The
+auto-detected `sdk` / `runtime` / `os` / `arch` defaults cannot be overridden
+— if you need more named fields (e.g. `region`, `cloud`), open an issue and
+we'll add them as constrained named fields.
+
+Pass `clientInfo: false` to omit the header entirely.
+
+## Browser usage
+
+`VatlyClient` is server-only. Instantiating it in a browser DOM context
+(`window` + `document` defined, not jsdom/happy-dom) throws at construction
+— Vatly keys are secret material and would leak to every visitor. If you
+have a deliberate reason (a testing setup, an Electron renderer with a
+server-side key, etc.) pass `dangerouslyAllowBrowser: true`.
 
 ## Pagination
 
@@ -254,6 +265,22 @@ await store.add(eventId);
 If a delivery arrives twice (Vatly's retry, your slow ACK, etc.), the
 `Vatly-Signature` will be different on each attempt but `Vatly-Event-Id`
 stays the same. Verify the signature, then dedupe on the event id.
+
+### Rotating webhook secrets
+
+All four verification helpers accept either a single secret or an array.
+During a rotation, pass both and the SDK will accept whichever was used to
+sign the delivery:
+
+```ts
+const event = await constructEventFromRequest(request, [
+  process.env.VATLY_WEBHOOK_SECRET_OLD!,
+  process.env.VATLY_WEBHOOK_SECRET_NEW!,
+]);
+```
+
+Drop the old secret from the array once you're confident nothing in-flight
+is still signed with it.
 
 ### Disabling the clock-skew check
 

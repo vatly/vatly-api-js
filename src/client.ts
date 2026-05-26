@@ -1,14 +1,14 @@
-import { resolveConfig, type ResolvedConfig, type VatlyClientOptions } from "./config.js";
+import { type ResolvedConfig, type VatlyClientOptions, resolveConfig } from "./config.js";
+import { ChargebacksResource } from "./resources/chargebacks.js";
 import { CheckoutsResource } from "./resources/checkouts.js";
 import { CustomersResource } from "./resources/customers.js";
 import { OneOffProductsResource } from "./resources/one-off-products.js";
-import { SubscriptionPlansResource } from "./resources/subscription-plans.js";
 import { OrdersResource } from "./resources/orders.js";
 import { RefundsResource } from "./resources/refunds.js";
-import { ChargebacksResource } from "./resources/chargebacks.js";
+import { SubscriptionPlansResource } from "./resources/subscription-plans.js";
 import { SubscriptionsResource } from "./resources/subscriptions.js";
-import { WebhookEventsResource } from "./resources/webhook-events.js";
 import { TestHelpersResource } from "./resources/test-helpers.js";
+import { WebhookEventsResource } from "./resources/webhook-events.js";
 
 export class VatlyClient {
   readonly checkouts: CheckoutsResource;

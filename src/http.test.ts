@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
+import {
+  aCreateCheckoutRequest,
+  aCreateCustomerRequest,
+  anUpdateSubscriptionRequest,
+} from "./__fixtures__/requests.js";
 import { VatlyClient } from "./client.js";
 import {
+  VatlyApiError,
   VatlyAuthError,
   VatlyForbiddenError,
   VatlyNotFoundError,
   VatlyRateLimitError,
   VatlyValidationError,
-  VatlyApiError,
 } from "./errors.js";
 import { makeFetchSequence } from "./test-utils.js";
 
@@ -45,10 +50,9 @@ describe("http", () => {
     it("caller-supplied key wins", async () => {
       const { fetch, calls } = makeFetchSequence([{ status: 201, body: { id: "c1" } }]);
       const client = makeClient({ fetch });
-      await client.checkouts.create(
-        { redirectUrlSuccess: "x", redirectUrlCanceled: "y", products: [] } as never,
-        { idempotencyKey: "abc-123" },
-      );
+      await client.checkouts.create(aCreateCheckoutRequest(), {
+        idempotencyKey: "abc-123",
+      });
       expect(calls[0]!.headers["idempotency-key"]).toBe("abc-123");
       expect(calls[0]!.headers["content-type"]).toBe("application/json");
     });
@@ -56,7 +60,7 @@ describe("http", () => {
     it("auto-generates a key for POST by default", async () => {
       const { fetch, calls } = makeFetchSequence([{ status: 201, body: {} }]);
       const client = makeClient({ fetch });
-      await client.checkouts.create({} as never);
+      await client.checkouts.create(aCreateCheckoutRequest());
       // Defaults to a UUID v4
       expect(calls[0]!.headers["idempotency-key"]).toMatch(
         /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
@@ -66,7 +70,7 @@ describe("http", () => {
     it("auto-generates a key for PATCH by default", async () => {
       const { fetch, calls } = makeFetchSequence([{ status: 200, body: { id: "s1" } }]);
       const client = makeClient({ fetch });
-      await client.subscriptions.update("subscription_1", {} as never);
+      await client.subscriptions.update("subscription_1", anUpdateSubscriptionRequest());
       expect(calls[0]!.headers["idempotency-key"]).toBeDefined();
     });
 
@@ -93,8 +97,8 @@ describe("http", () => {
       let i = 0;
       const gen = () => `key-${++i}`;
       const client = makeClient({ fetch, idempotencyKeyGenerator: gen });
-      await client.checkouts.create({} as never);
-      await client.checkouts.create({} as never);
+      await client.checkouts.create(aCreateCheckoutRequest());
+      await client.checkouts.create(aCreateCheckoutRequest());
       expect(calls[0]!.headers["idempotency-key"]).toBe("key-1");
       expect(calls[1]!.headers["idempotency-key"]).toBe("key-2");
     });
@@ -102,16 +106,14 @@ describe("http", () => {
     it("idempotencyKeyGenerator: false disables auto-gen entirely", async () => {
       const { fetch, calls } = makeFetchSequence([{ status: 201, body: {} }]);
       const client = makeClient({ fetch, idempotencyKeyGenerator: false });
-      await client.checkouts.create({} as never);
+      await client.checkouts.create(aCreateCheckoutRequest());
       expect(calls[0]!.headers["idempotency-key"]).toBeUndefined();
     });
   });
 
   describe("error mapping", () => {
     it("401 → VatlyAuthError", async () => {
-      const { fetch } = makeFetchSequence([
-        { status: 401, body: { message: "Unauthenticated." } },
-      ]);
+      const { fetch } = makeFetchSequence([{ status: 401, body: { message: "Unauthenticated." } }]);
       const client = makeClient({ fetch });
       await expect(client.checkouts.get("x")).rejects.toBeInstanceOf(VatlyAuthError);
     });
@@ -142,7 +144,7 @@ describe("http", () => {
       ]);
       const client = makeClient({ fetch });
       try {
-        await client.customers.create({ email: "" } as never);
+        await client.customers.create(aCreateCustomerRequest({ email: "" }));
         throw new Error("expected throw");
       } catch (err) {
         expect(err).toBeInstanceOf(VatlyValidationError);
@@ -170,18 +172,6 @@ describe("http", () => {
       const { fetch } = makeFetchSequence([{ status: 500, body: { message: "oops" } }]);
       const client = makeClient({ fetch, maxRetries: 0 });
       await expect(client.checkouts.get("x")).rejects.toBeInstanceOf(VatlyApiError);
-    });
-
-    it("captures X-Request-Id when present", async () => {
-      const { fetch } = makeFetchSequence([
-        { status: 404, body: { message: "x" }, headers: { "X-Request-Id": "req_abc" } },
-      ]);
-      const client = makeClient({ fetch });
-      try {
-        await client.checkouts.get("x");
-      } catch (err) {
-        expect((err as VatlyNotFoundError).requestId).toBe("req_abc");
-      }
     });
   });
 
@@ -213,7 +203,9 @@ describe("http", () => {
         { status: 200, body: { id: "ok" } },
       ]);
       const client = makeClient({ fetch, maxRetries: 5, idempotencyKeyGenerator: false });
-      await expect(client.checkouts.create({} as never)).rejects.toBeInstanceOf(VatlyApiError);
+      await expect(client.checkouts.create(aCreateCheckoutRequest())).rejects.toBeInstanceOf(
+        VatlyApiError,
+      );
       expect(calls.length).toBe(1);
     });
 
@@ -223,7 +215,7 @@ describe("http", () => {
         { status: 201, body: { id: "ok" } },
       ]);
       const client = makeClient({ fetch, maxRetries: 2 });
-      await client.checkouts.create({} as never);
+      await client.checkouts.create(aCreateCheckoutRequest());
       expect(calls.length).toBe(2);
       // Same key on retry — required for the server to dedupe.
       expect(calls[0]!.headers["idempotency-key"]).toBe(calls[1]!.headers["idempotency-key"]);
@@ -235,7 +227,7 @@ describe("http", () => {
         { status: 201, body: { id: "ok" } },
       ]);
       const client = makeClient({ fetch, maxRetries: 2, idempotencyKeyGenerator: false });
-      await client.checkouts.create({} as never, { idempotencyKey: "k1" });
+      await client.checkouts.create(aCreateCheckoutRequest(), { idempotencyKey: "k1" });
       expect(calls.length).toBe(2);
       expect(calls[0]!.headers["idempotency-key"]).toBe("k1");
       expect(calls[1]!.headers["idempotency-key"]).toBe("k1");

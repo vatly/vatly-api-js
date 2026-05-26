@@ -1,5 +1,5 @@
 import type { RequestOptions } from "../http.js";
-import type { PaginatedList, ListParams } from "../pagination.js";
+import type { ListParams, PaginatedList } from "../pagination.js";
 import type { OneOffProduct } from "../types.js";
 import { BaseResource } from "./base.js";
 

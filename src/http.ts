@@ -1,10 +1,10 @@
 import type { ResolvedConfig } from "./config.js";
 import {
-  errorFromResponse,
   VatlyApiError,
   VatlyConnectionError,
   VatlyError,
   VatlyTimeoutError,
+  errorFromResponse,
 } from "./errors.js";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
@@ -81,7 +81,11 @@ export async function performRequest<T>(
   // Resolve the Idempotency-Key value (caller > auto-generator > none).
   // POST and PATCH get auto-keys by default — matches vatly/vatly-api-php.
   let idempotencyKey = options.idempotencyKey;
-  if (idempotencyKey === undefined && IDEMPOTENT_METHODS.has(method) && config.idempotencyKeyGenerator) {
+  if (
+    idempotencyKey === undefined &&
+    IDEMPOTENT_METHODS.has(method) &&
+    config.idempotencyKeyGenerator
+  ) {
     idempotencyKey = config.idempotencyKeyGenerator();
   }
   const hasIdemKey = typeof idempotencyKey === "string" && idempotencyKey.length > 0;
@@ -97,7 +101,7 @@ export async function performRequest<T>(
   };
 
   if (config.clientInfoHeader) {
-    baseHeaders["X-Vatly-Client-Info"] = config.clientInfoHeader;
+    baseHeaders["Vatly-Client-Info"] = config.clientInfoHeader;
   }
 
   if (req.body !== undefined) {
@@ -180,9 +184,7 @@ export async function performRequest<T>(
   }
 
   // Should be unreachable, but TypeScript can't prove it.
-  throw lastError instanceof Error
-    ? lastError
-    : new VatlyApiError({ status: 0, url, method });
+  throw lastError instanceof Error ? lastError : new VatlyApiError({ status: 0, url, method });
 }
 
 async function parseResponse<T>(response: Response): Promise<T | undefined> {
@@ -210,10 +212,8 @@ async function errorFromHttpResponse(
   } catch {
     body = text;
   }
-  const requestId = response.headers.get("X-Request-Id") ?? undefined;
   return errorFromResponse({
     status: response.status,
-    requestId,
     body: body as never,
     url,
     method,
@@ -235,9 +235,7 @@ function makeSignal(
     }
   }
   const timer =
-    timeoutMs > 0
-      ? setTimeout(() => controller.abort(new Error("timeout")), timeoutMs)
-      : undefined;
+    timeoutMs > 0 ? setTimeout(() => controller.abort(new Error("timeout")), timeoutMs) : undefined;
 
   return {
     signal: controller.signal,

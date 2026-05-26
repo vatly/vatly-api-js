@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fromMinorUnits, moneyEquals, toMinorUnits, type Money } from "./money.js";
+import { type Money, fromMinorUnits, moneyEquals, toMinorUnits } from "./money.js";
 
 describe("Money", () => {
   it("keeps value as a string through round-trip", () => {
@@ -35,11 +35,14 @@ describe("Money", () => {
   });
 
   it("moneyEquals is strict on both fields", () => {
-    expect(moneyEquals({ value: "1.00", currency: "EUR" }, { value: "1.00", currency: "EUR" }))
-      .toBe(true);
-    expect(moneyEquals({ value: "1.00", currency: "EUR" }, { value: "1.0", currency: "EUR" }))
-      .toBe(false);
-    expect(moneyEquals({ value: "1.00", currency: "EUR" }, { value: "1.00", currency: "USD" }))
-      .toBe(false);
+    expect(
+      moneyEquals({ value: "1.00", currency: "EUR" }, { value: "1.00", currency: "EUR" }),
+    ).toBe(true);
+    expect(moneyEquals({ value: "1.00", currency: "EUR" }, { value: "1.0", currency: "EUR" })).toBe(
+      false,
+    );
+    expect(
+      moneyEquals({ value: "1.00", currency: "EUR" }, { value: "1.00", currency: "USD" }),
+    ).toBe(false);
   });
 });

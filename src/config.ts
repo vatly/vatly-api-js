@@ -19,12 +19,19 @@ const API_KEY_REGEX = /^(live|test)_[\w|]{18,}$/;
 export type IdempotencyKeyGenerator = () => string;
 
 /**
- * Extra fragments merged into the `X-Vatly-Client-Info` header.
- * Pass `false` on the client option to omit the header entirely.
- * Values are joined as `key=value; key=value` after the auto-detected
- * runtime/os/arch defaults.
+ * Optional identifiers for the calling application. Merged into the
+ * `Vatly-Client-Info` header alongside the auto-detected runtime/os/arch.
+ * Each field is capped to keep header size predictable.
  */
-export type ClientInfoFragments = Record<string, string | undefined>;
+export interface ClientInfo {
+  /** Application identifier in `Name/Version` form. Truncated to 64 chars. */
+  app?: string;
+  /** Framework identifier in `Name/Version` form. Truncated to 64 chars. */
+  framework?: string;
+}
+
+/** Maximum value length per ClientInfo field. */
+const CLIENT_INFO_VALUE_MAX = 64;
 
 export interface VatlyClientOptions {
   /**
@@ -59,15 +66,27 @@ export interface VatlyClientOptions {
    */
   idempotencyKeyGenerator?: IdempotencyKeyGenerator | false;
   /**
-   * Extra fragments to merge into the `X-Vatly-Client-Info` header,
-   * on top of the auto-detected `runtime` / `os` / `arch` defaults.
+   * Identify the calling application in the `Vatly-Client-Info` header.
+   * Merged on top of the auto-detected `runtime` / `os` / `arch` defaults:
    *
    *   new VatlyClient({ clientInfo: { app: "MyApp/1.2.3", framework: "Next.js/14" } });
-   *   // X-Vatly-Client-Info: runtime=node/v25.9.0; os=darwin; arch=arm64; app=MyApp/1.2.3; framework=Next.js/14
+   *   // Vatly-Client-Info: sdk=vatly-sdk-js/0.2.0; runtime=node/v25.9.0; os=darwin; arch=arm64; app=MyApp/1.2.3; framework=Next.js/14
    *
-   * Pass `false` to omit the header entirely.
+   * Pass `false` to omit the header entirely. If you need more named fields
+   * (e.g. `region`, `cloud`), open an issue — we'll add them as constrained
+   * named fields rather than reopening the free-form record.
    */
-  clientInfo?: ClientInfoFragments | false;
+  clientInfo?: ClientInfo | false;
+  /**
+   * Allow `VatlyClient` to be instantiated in a browser context. Default false.
+   *
+   * Vatly keys are secret material; bundling them into a client-side app
+   * leaks the key to every visitor. The SDK throws at construction if a
+   * browser is detected. Set this to `true` only when you have a deliberate
+   * reason (server-rendered hydration, testing through jsdom, etc.) AND
+   * you've confirmed the key is not bundled into the client payload.
+   */
+  dangerouslyAllowBrowser?: boolean;
 }
 
 export interface ResolvedConfig {
@@ -97,6 +116,16 @@ function readEnvApiKey(): string | undefined {
 }
 
 export function resolveConfig(options: VatlyClientOptions = {}): ResolvedConfig {
+  if (isBrowser() && !options.dangerouslyAllowBrowser) {
+    throw new Error(
+      "Vatly: VatlyClient must not be instantiated in a browser. " +
+        "API keys are secret and would leak to every visitor. " +
+        "Use VatlyClient on a server (Node, Workers, Edge, Deno, Bun). " +
+        "If you understand the risk and the key really is server-side, " +
+        "pass `dangerouslyAllowBrowser: true`.",
+    );
+  }
+
   const apiKey = options.apiKey ?? readEnvApiKey();
   if (!apiKey || apiKey.length === 0) {
     throw new Error(
@@ -166,7 +195,23 @@ function defaultIdempotencyKeyGenerator(): string {
   );
 }
 
-// ---- X-Vatly-Client-Info -------------------------------------------------
+/** Returns true iff running in a browser DOM context (not Workers/Edge/Deno/Node/jsdom). */
+function isBrowser(): boolean {
+  const g = globalThis as unknown as {
+    window?: unknown;
+    document?: { getElementById?: unknown };
+    navigator?: { userAgent?: string };
+  };
+  // jsdom and HappyDOM define window+document but typically also identify via
+  // navigator.userAgent containing "jsdom" / "happy-dom". We allow those so
+  // the SDK is testable in DOM-emulating environments.
+  if (typeof g.window === "undefined" || typeof g.document === "undefined") return false;
+  const ua = g.navigator?.userAgent ?? "";
+  if (/jsdom|happy-dom/i.test(ua)) return false;
+  return true;
+}
+
+// ---- Vatly-Client-Info ---------------------------------------------------
 
 interface DetectedRuntime {
   runtime: string;
@@ -187,7 +232,7 @@ export function detectRuntime(): DetectedRuntime {
   if (g.Bun && typeof g.Bun.version === "string") {
     return { runtime: `bun/${g.Bun.version}` };
   }
-  if (g.Deno && g.Deno.version) {
+  if (g.Deno?.version) {
     return { runtime: `deno/${g.Deno.version.deno ?? "?"}` };
   }
   // Cloudflare Workers expose this navigator UA reliably.
@@ -210,43 +255,49 @@ export function detectRuntime(): DetectedRuntime {
 }
 
 /**
- * Build the `X-Vatly-Client-Info` header value.
- * Returns `undefined` to suppress the header (when `extras === false`).
+ * Build the `Vatly-Client-Info` header value.
+ * Returns `undefined` to suppress the header (when `info === false`).
+ *
+ * Defaults: `sdk`, `runtime`, `os`, `arch` (auto-detected).
+ * Caller-provided: `app`, `framework` — each truncated to 64 chars after
+ * stripping CR/LF/`;`/`,` and collapsing whitespace.
  */
-export function buildClientInfoHeader(
-  extras: ClientInfoFragments | false | undefined,
-): string | undefined {
-  if (extras === false) return undefined;
+export function buildClientInfoHeader(info: ClientInfo | false | undefined): string | undefined {
+  if (info === false) return undefined;
 
   const detected = detectRuntime();
-  const fragments: ClientInfoFragments = {
-    sdk: `vatly-sdk-js/${SDK_VERSION}`,
-    runtime: detected.runtime,
-  };
-  if (detected.os) fragments.os = detected.os;
-  if (detected.arch) fragments.arch = detected.arch;
+  const fragments: Array<[string, string]> = [
+    ["sdk", `vatly-sdk-js/${SDK_VERSION}`],
+    ["runtime", detected.runtime],
+  ];
+  if (detected.os) fragments.push(["os", detected.os]);
+  if (detected.arch) fragments.push(["arch", detected.arch]);
 
-  if (extras) {
-    for (const [k, v] of Object.entries(extras)) {
-      if (typeof v === "string" && v.length > 0) fragments[k] = v;
-      else if (v === undefined) delete fragments[k];
-    }
+  if (info?.app) {
+    const v = sanitizeValue(info.app, CLIENT_INFO_VALUE_MAX);
+    if (v) fragments.push(["app", v]);
+  }
+  if (info?.framework) {
+    const v = sanitizeValue(info.framework, CLIENT_INFO_VALUE_MAX);
+    if (v) fragments.push(["framework", v]);
   }
 
   const parts: string[] = [];
-  for (const [k, v] of Object.entries(fragments)) {
-    if (typeof v !== "string" || v.length === 0) continue;
-    parts.push(`${sanitizeKey(k)}=${sanitizeValue(v)}`);
+  for (const [k, v] of fragments) {
+    if (v.length === 0) continue;
+    parts.push(`${k}=${v}`);
   }
   return parts.length > 0 ? parts.join("; ") : undefined;
 }
 
-/** Restrict keys to a safe subset so user input can't break header parsing. */
-function sanitizeKey(k: string): string {
-  return k.replace(/[^A-Za-z0-9_.-]/g, "_");
-}
-
-/** Strip header-breaking chars (CRLF, `;`, `,`) and collapse whitespace. */
-function sanitizeValue(v: string): string {
-  return v.replace(/[\r\n;,]/g, " ").replace(/\s+/g, " ").trim();
+/**
+ * Strip header-breaking chars (CR/LF, `;`, `,`), collapse whitespace, and
+ * truncate to the given byte length.
+ */
+function sanitizeValue(v: string, maxLen: number): string {
+  const cleaned = v
+    .replace(/[\r\n;,]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned.length > maxLen ? cleaned.slice(0, maxLen) : cleaned;
 }

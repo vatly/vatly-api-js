@@ -5,7 +5,7 @@ export {
   buildClientInfoHeader,
   detectMode,
   detectRuntime,
-  type ClientInfoFragments,
+  type ClientInfo,
   type IdempotencyKeyGenerator,
   type VatlyClientOptions,
   type VatlyServer,
@@ -32,7 +32,12 @@ export {
   moneyEquals,
 } from "./money.js";
 
-export { paginate, extractStartingAfter, type ListParams, type PaginatedList } from "./pagination.js";
+export {
+  paginate,
+  extractStartingAfter,
+  type ListParams,
+  type PaginatedList,
+} from "./pagination.js";
 
 export {
   decodeDomain,

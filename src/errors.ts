@@ -15,7 +15,6 @@ export interface VatlyErrorBody {
 
 export interface VatlyErrorContext {
   status: number;
-  requestId?: string;
   body?: VatlyErrorBody | string;
   url?: string;
   method?: string;
@@ -23,7 +22,6 @@ export interface VatlyErrorContext {
 
 export class VatlyError extends Error {
   readonly status: number;
-  readonly requestId: string | undefined;
   readonly body: VatlyErrorBody | string | undefined;
   readonly url: string | undefined;
   readonly method: string | undefined;
@@ -32,7 +30,6 @@ export class VatlyError extends Error {
     super(message);
     this.name = "VatlyError";
     this.status = ctx.status;
-    this.requestId = ctx.requestId;
     this.body = ctx.body;
     this.url = ctx.url;
     this.method = ctx.method;
@@ -68,9 +65,7 @@ export class VatlyValidationError extends VatlyError {
     super(messageFrom(ctx) ?? "Validation failed.", ctx);
     this.name = "VatlyValidationError";
     this.errors =
-      typeof ctx.body === "object" && ctx.body !== null && ctx.body.errors
-        ? ctx.body.errors
-        : {};
+      typeof ctx.body === "object" && ctx.body !== null && ctx.body.errors ? ctx.body.errors : {};
   }
 }
 

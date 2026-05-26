@@ -46,9 +46,6 @@
     "lint": "biome check src",
     "format": "biome format --write src"
   },
-  "dependencies": {
-    "openapi-fetch": "^0.13.0"
-  },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
     "@types/node": "^20.14.0",

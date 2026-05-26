@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { VatlyClient } from "./client.js";
-import { makeFetchSequence } from "./test-utils.js";
 import { extractStartingAfter } from "./pagination.js";
+import { makeFetchSequence } from "./test-utils.js";
 
 function listPage(ids: string[], next: string | null) {
   return {
@@ -10,7 +10,10 @@ function listPage(ids: string[], next: string | null) {
     links: {
       self: { href: "https://api.example.com/v1/checkouts", type: "application/json" },
       next: next
-        ? { href: `https://api.example.com/v1/checkouts?startingAfter=${next}`, type: "application/json" }
+        ? {
+            href: `https://api.example.com/v1/checkouts?startingAfter=${next}`,
+            type: "application/json",
+          }
         : null,
       prev: null,
     },
@@ -49,9 +52,7 @@ describe("pagination", () => {
   });
 
   it("stops when next is null on the first page", async () => {
-    const { fetch, calls } = makeFetchSequence([
-      { status: 200, body: listPage(["only"], null) },
-    ]);
+    const { fetch, calls } = makeFetchSequence([{ status: 200, body: listPage(["only"], null) }]);
     const client = new VatlyClient({
       apiKey: "test_abcdefghij0123456789",
       baseUrl: "https://api.example.com/v1",

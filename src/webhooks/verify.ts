@@ -73,19 +73,20 @@ export interface VerifyOptions {
 /**
  * Throws `VatlyInvalidSignatureError` if the signature is missing, malformed,
  * stale, or doesn't match. Returns normally on success.
+ *
+ * `secret` may be a single string or an array — useful during secret rotation.
+ * The signature is accepted if it verifies against ANY of the provided secrets.
  */
 export async function verifyWebhookSignature(
   rawBody: RawBody,
   signatureHeader: string | null | undefined,
-  secret: string,
+  secret: string | readonly string[],
   options?: VerifyOptions,
 ): Promise<void> {
   if (typeof signatureHeader !== "string" || signatureHeader.length === 0) {
     throw new VatlyInvalidSignatureError("Missing webhook signature.");
   }
-  if (typeof secret !== "string" || secret.length === 0) {
-    throw new VatlyInvalidSignatureError("Webhook secret must be a non-empty string.");
-  }
+  const secrets = normalizeSecrets(secret);
 
   const parsed = parseSignatureHeader(signatureHeader);
 
@@ -115,18 +116,42 @@ export async function verifyWebhookSignature(
   }
 
   const signingInput = buildSigningInput(parsed.t, rawBody);
-  const expected = await computeHmacHex(signingInput, secret);
 
-  if (!constantTimeEqualHex(candidate.value, expected)) {
+  // Try each secret. Match if any one verifies. Iterate fully so the timing
+  // of accepts/rejects doesn't leak which secret matched.
+  let matched = false;
+  for (const s of secrets) {
+    const expected = await computeHmacHex(signingInput, s);
+    if (constantTimeEqualHex(candidate.value, expected)) {
+      matched = true;
+      // Don't break — keep iterating so we don't leak position via timing.
+    }
+  }
+  if (!matched) {
     throw new VatlyInvalidSignatureError(`Webhook signature mismatch on ${candidate.version}.`);
   }
+}
+
+function normalizeSecrets(secret: string | readonly string[]): readonly string[] {
+  const list = typeof secret === "string" ? [secret] : secret;
+  if (!Array.isArray(list) || list.length === 0) {
+    throw new VatlyInvalidSignatureError(
+      "Webhook secret must be a non-empty string or non-empty array of strings.",
+    );
+  }
+  for (const s of list) {
+    if (typeof s !== "string" || s.length === 0) {
+      throw new VatlyInvalidSignatureError("Webhook secret entries must all be non-empty strings.");
+    }
+  }
+  return list;
 }
 
 /** Non-throwing variant. Returns `true` iff the signature is valid. */
 export async function isValidWebhookSignature(
   rawBody: RawBody,
   signatureHeader: string | null | undefined,
-  secret: string,
+  secret: string | readonly string[],
   options?: VerifyOptions,
 ): Promise<boolean> {
   try {
@@ -146,7 +171,7 @@ export async function isValidWebhookSignature(
 export async function constructEvent(
   rawBody: RawBody,
   signatureHeader: string | null | undefined,
-  secret: string,
+  secret: string | readonly string[],
   options?: VerifyOptions,
 ): Promise<WebhookEvent> {
   await verifyWebhookSignature(rawBody, signatureHeader, secret, options);
@@ -168,7 +193,7 @@ export async function constructEvent(
  */
 export async function constructEventFromRequest(
   request: Request,
-  secret: string,
+  secret: string | readonly string[],
   options?: VerifyOptions,
 ): Promise<WebhookEvent> {
   const rawBody = await request.text();
@@ -267,13 +292,9 @@ async function computeHmacHex(input: Uint8Array, secret: string): Promise<string
 
   const keyData = copyToArrayBuffer(new TextEncoder().encode(secret));
   const bodyData = copyToArrayBuffer(input);
-  const key = await subtle.importKey(
-    "raw",
-    keyData,
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
+  const key = await subtle.importKey("raw", keyData, { name: "HMAC", hash: "SHA-256" }, false, [
+    "sign",
+  ]);
   const sigBuffer = await subtle.sign("HMAC", key, bodyData);
   return bufferToHex(new Uint8Array(sigBuffer));
 }

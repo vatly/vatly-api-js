@@ -1,10 +1,6 @@
 import type { RequestOptions } from "../http.js";
-import type { PaginatedList, ListParams } from "../pagination.js";
-import type {
-  CreateCustomerRequest,
-  Customer,
-  Subscription,
-} from "../types.js";
+import type { ListParams, PaginatedList } from "../pagination.js";
+import type { CreateCustomerRequest, Customer, Subscription } from "../types.js";
 import { BaseResource } from "./base.js";
 
 export class CustomersResource extends BaseResource {
@@ -20,10 +16,7 @@ export class CustomersResource extends BaseResource {
   }
 
   create(body: CreateCustomerRequest, opts?: RequestOptions): Promise<Customer> {
-    return this.request<Customer>(
-      { method: "POST", path: "/customers", body },
-      opts,
-    );
+    return this.request<Customer>({ method: "POST", path: "/customers", body }, opts);
   }
 
   get(customerId: string, opts?: RequestOptions): Promise<Customer> {

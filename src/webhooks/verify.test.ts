@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { VatlyInvalidSignatureError } from "../errors.js";
 import {
   VATLY_EVENT_ID_HEADER,
   VATLY_SIGNATURE_HEADER,
@@ -9,7 +10,6 @@ import {
   parseSignatureHeader,
   verifyWebhookSignature,
 } from "./verify.js";
-import { VatlyInvalidSignatureError } from "../errors.js";
 
 const SECRET = "whsec_test";
 
@@ -41,9 +41,7 @@ describe("webhook verify — v1 timestamped signature", () => {
   describe("protocol-locked vector (matches vatlify DefaultSignerTest)", () => {
     it("computeSignatureV1 matches the byte-for-byte locked vector", async () => {
       const sig = await computeSignatureV1('{"foo":"bar"}', "my_secret_key", 1_700_000_000);
-      expect(sig).toBe(
-        "f5a64398fd049d1507a2654439f257e7549fcff6ffa9bbc355c7f1ebaefb6925",
-      );
+      expect(sig).toBe("f5a64398fd049d1507a2654439f257e7549fcff6ffa9bbc355c7f1ebaefb6925");
     });
 
     it("swapping the timestamp invalidates the signature", async () => {
@@ -100,7 +98,7 @@ describe("webhook verify — v1 timestamped signature", () => {
     });
 
     it("rejects when t is missing", async () => {
-      const header = "v1=" + (await computeSignatureV1(rawBody, SECRET, FROZEN_T));
+      const header = `v1=${await computeSignatureV1(rawBody, SECRET, FROZEN_T)}`;
       await expect(
         verifyWebhookSignature(rawBody, header, SECRET, { now: FROZEN_NOW }),
       ).rejects.toThrow(/missing or invalid `t`/);
@@ -125,7 +123,7 @@ describe("webhook verify — v1 timestamped signature", () => {
     it("rejects on tampered body", async () => {
       const header = await signedHeader(FROZEN_T, rawBody);
       await expect(
-        verifyWebhookSignature(rawBody + " ", header, SECRET, { now: FROZEN_NOW }),
+        verifyWebhookSignature(`${rawBody} `, header, SECRET, { now: FROZEN_NOW }),
       ).rejects.toThrow(/signature mismatch/i);
     });
 
@@ -236,9 +234,9 @@ describe("webhook verify — v1 timestamped signature", () => {
     it("rejects non-JSON body even with a valid signature", async () => {
       const bad = "not json";
       const header = await signedHeader(FROZEN_T, bad);
-      await expect(
-        constructEvent(bad, header, SECRET, { now: FROZEN_NOW }),
-      ).rejects.toBeInstanceOf(VatlyInvalidSignatureError);
+      await expect(constructEvent(bad, header, SECRET, { now: FROZEN_NOW })).rejects.toBeInstanceOf(
+        VatlyInvalidSignatureError,
+      );
     });
   });
 
@@ -273,6 +271,65 @@ describe("webhook verify — v1 timestamped signature", () => {
       await expect(
         constructEventFromRequest(request, SECRET, { now: FROZEN_NOW }),
       ).rejects.toBeInstanceOf(VatlyInvalidSignatureError);
+    });
+  });
+
+  describe("multi-secret (rotation support)", () => {
+    it("accepts when signed by the second of two provided secrets", async () => {
+      const header = await signedHeader(FROZEN_T, rawBody, "new_secret");
+      await expect(
+        verifyWebhookSignature(rawBody, header, ["old_secret", "new_secret"], {
+          now: FROZEN_NOW,
+        }),
+      ).resolves.toBeUndefined();
+    });
+
+    it("accepts when signed by the first of two provided secrets", async () => {
+      const header = await signedHeader(FROZEN_T, rawBody, "old_secret");
+      await expect(
+        verifyWebhookSignature(rawBody, header, ["old_secret", "new_secret"], {
+          now: FROZEN_NOW,
+        }),
+      ).resolves.toBeUndefined();
+    });
+
+    it("rejects when no provided secret matches", async () => {
+      const header = await signedHeader(FROZEN_T, rawBody, "unknown_secret");
+      await expect(
+        verifyWebhookSignature(rawBody, header, ["a", "b", "c"], { now: FROZEN_NOW }),
+      ).rejects.toThrow(/signature mismatch/i);
+    });
+
+    it("rejects empty array", async () => {
+      const header = await signedHeader(FROZEN_T, rawBody);
+      await expect(
+        verifyWebhookSignature(rawBody, header, [], { now: FROZEN_NOW }),
+      ).rejects.toThrow(/non-empty/);
+    });
+
+    it("rejects array with empty-string entry", async () => {
+      const header = await signedHeader(FROZEN_T, rawBody);
+      await expect(
+        verifyWebhookSignature(rawBody, header, ["valid", ""], { now: FROZEN_NOW }),
+      ).rejects.toThrow(/non-empty strings/);
+    });
+
+    it("works through constructEvent + constructEventFromRequest too", async () => {
+      const header = await signedHeader(FROZEN_T, rawBody, "rotated");
+      const event = await constructEvent(rawBody, header, ["original", "rotated"], {
+        now: FROZEN_NOW,
+      });
+      expect(event.eventName).toBe("order.paid");
+
+      const request = new Request("https://merchant.example/webhook", {
+        method: "POST",
+        body: rawBody,
+        headers: { [VATLY_SIGNATURE_HEADER]: header },
+      });
+      const event2 = await constructEventFromRequest(request, ["original", "rotated"], {
+        now: FROZEN_NOW,
+      });
+      expect(event2.eventName).toBe("order.paid");
     });
   });
 

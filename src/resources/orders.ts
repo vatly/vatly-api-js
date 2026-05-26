@@ -1,5 +1,5 @@
 import type { RequestOptions } from "../http.js";
-import type { PaginatedList, ListParams } from "../pagination.js";
+import type { ListParams, PaginatedList } from "../pagination.js";
 import type {
   AddressUpdateLink,
   Chargeback,
@@ -33,10 +33,7 @@ export class OrdersResource extends BaseResource {
    * POST /orders/{orderId}/request-address-update-link
    * Returns a hosted link the customer can use to update their billing address.
    */
-  requestAddressUpdateLink(
-    orderId: string,
-    opts?: RequestOptions,
-  ): Promise<AddressUpdateLink> {
+  requestAddressUpdateLink(orderId: string, opts?: RequestOptions): Promise<AddressUpdateLink> {
     return this.request<AddressUpdateLink>(
       {
         method: "POST",
@@ -68,18 +65,10 @@ export class OrdersResource extends BaseResource {
     params: ListParams = {},
     opts?: RequestOptions,
   ): AsyncIterableIterator<Refund> {
-    return this.paginateAll<Refund>(
-      (p, o) => this.listRefunds(orderId, p, o),
-      params,
-      opts,
-    );
+    return this.paginateAll<Refund>((p, o) => this.listRefunds(orderId, p, o), params, opts);
   }
 
-  createRefund(
-    orderId: string,
-    body: CreateRefundRequest,
-    opts?: RequestOptions,
-  ): Promise<Refund> {
+  createRefund(orderId: string, body: CreateRefundRequest, opts?: RequestOptions): Promise<Refund> {
     return this.request<Refund>(
       {
         method: "POST",
@@ -115,11 +104,7 @@ export class OrdersResource extends BaseResource {
     );
   }
 
-  cancelRefund(
-    orderId: string,
-    refundId: string,
-    opts?: RequestOptions,
-  ): Promise<void> {
+  cancelRefund(orderId: string, refundId: string, opts?: RequestOptions): Promise<void> {
     return this.request<void>(
       {
         method: "DELETE",
@@ -146,11 +131,7 @@ export class OrdersResource extends BaseResource {
     );
   }
 
-  getChargeback(
-    orderId: string,
-    chargebackId: string,
-    opts?: RequestOptions,
-  ): Promise<Chargeback> {
+  getChargeback(orderId: string, chargebackId: string, opts?: RequestOptions): Promise<Chargeback> {
     return this.request<Chargeback>(
       {
         method: "GET",
