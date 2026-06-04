@@ -58,6 +58,21 @@ export class SubscriptionsResource extends BaseResource {
   }
 
   /**
+   * POST /subscriptions/{id}/resume
+   * Resumes a subscription that was canceled with a grace period, while its
+   * `status` is still `on_grace_period`. The refreshed subscription is returned.
+   */
+  resume(subscriptionId: string, opts?: RequestOptions): Promise<Subscription> {
+    return this.request<Subscription>(
+      {
+        method: "POST",
+        path: `/subscriptions/${encodeURIComponent(subscriptionId)}/resume`,
+      },
+      opts,
+    );
+  }
+
+  /**
    * POST /subscriptions/{id}/billing-update-link
    * Generates a signed, hosted URL the customer can use to update their billing
    * details (billing address, VAT number, company name).
@@ -75,5 +90,14 @@ export class SubscriptionsResource extends BaseResource {
       },
       opts,
     );
+  }
+
+  /** @deprecated use createBillingUpdateLink */
+  updateBilling(
+    subscriptionId: string,
+    body: UpdateSubscriptionBillingRequest,
+    opts?: RequestOptions,
+  ): Promise<Subscription> {
+    return this.createBillingUpdateLink(subscriptionId, body, opts);
   }
 }

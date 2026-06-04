@@ -44,6 +44,11 @@ export class OrdersResource extends BaseResource {
     );
   }
 
+  /** @deprecated use createInvoiceUpdateLink */
+  requestAddressUpdateLink(orderId: string, opts?: RequestOptions): Promise<InvoiceUpdateLink> {
+    return this.createInvoiceUpdateLink(orderId, opts);
+  }
+
   // --- Refunds nested under an order ---
 
   listRefunds(
