@@ -26,7 +26,7 @@ export interface paths {
          *     Checkouts expire after a configurable period (default: 24 hours).
          *
          *     **Products:**
-         *     - Include one or more products using their `prod_` or `plan_` IDs
+         *     - Include one or more products using their `one_off_product_` or `subscription_plan_` IDs
          *     - Mix one-off products and subscription plans in the same checkout
          *     - Override prices for specific products using the `price` field
          *     - Add trial periods to subscription plans using `trialDays`
@@ -285,7 +285,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/orders/{orderId}/request-address-update-link": {
+    "/orders/{orderId}/invoice-update-link": {
         parameters: {
             query?: never;
             header?: never;
@@ -295,18 +295,19 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Request address update link
-         * @description Generates a signed URL that allows the customer to update their billing address for this order.
+         * Create invoice update link
+         * @description Generates a signed URL that allows the customer to update the invoice details for this order
+         *     (billing address, VAT number, company name).
          *
          *     The link is valid for a limited time (typically 24 hours) and can be sent to the customer
-         *     to self-service update their invoice details.
+         *     to self-service update their invoice.
          *
          *     **Use cases:**
          *     - Customer needs to add/update VAT number
          *     - Customer needs to correct billing address
          *     - Customer needs to change company name on invoice
          */
-        post: operations["requestOrderAddressUpdateLink"];
+        post: operations["createOrderInvoiceUpdateLink"];
         delete?: never;
         options?: never;
         head?: never;
@@ -604,7 +605,9 @@ export interface paths {
          *     - **Immediate:** Subscription ends immediately when `immediately=true` is specified
          *
          *     **Notes:**
-         *     - Canceled subscriptions cannot be reactivated through the API
+         *     - A subscription that was canceled with a grace period (the default) can be resumed via
+         *       `POST /subscriptions/{subscriptionId}/resume` while its `status` is `on_grace_period`
+         *     - A subscription that was canceled immediately cannot be reactivated; create a new subscription instead
          *     - Customers retain access until `renewedUntil` date (unless canceled immediately)
          *     - No refunds are issued automatically; use the Refunds API if needed
          */
@@ -640,7 +643,7 @@ export interface paths {
         patch: operations["updateSubscription"];
         trace?: never;
     };
-    "/subscriptions/{subscriptionId}/update-billing": {
+    "/subscriptions/{subscriptionId}/billing-update-link": {
         parameters: {
             query?: never;
             header?: never;
@@ -649,16 +652,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
         /**
-         * Update billing details (hosted)
-         * @description Initiates a hosted billing update flow for the subscription.
-         *
-         *     Returns a redirect URL where the customer can update their billing address,
-         *     VAT number, and other invoice details.
+         * Create billing update link
+         * @description Generates a signed URL that allows the customer to update the billing details for this
+         *     subscription (billing address, VAT number, company name) via a hosted flow.
          *
          *     **Flow:**
          *     1. Call this endpoint with redirect URLs
@@ -671,7 +668,51 @@ export interface paths {
          *     - Customer needs to add/update VAT number
          *     - Self-service invoice detail management
          */
-        patch: operations["updateSubscriptionBilling"];
+        post: operations["createSubscriptionBillingUpdateLink"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/subscriptions/{subscriptionId}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume a canceled subscription
+         * @description Resumes a subscription that was previously canceled with a grace period, while it is still
+         *     within that grace period.
+         *
+         *     **When this works:**
+         *     - The subscription's `status` is `on_grace_period`
+         *
+         *       (`endedAt` stays `null` throughout the grace period — it is only set once the
+         *       subscription has actually ended, so resumability is keyed off `status`, not `endedAt`.)
+         *
+         *     **Result:**
+         *     - Status returns to `active`
+         *     - The existing billing cycle and renewal schedule are preserved (no new charge fires immediately)
+         *     - The original payment mandate remains in effect
+         *     - A `subscription.resumed` webhook is delivered to your configured endpoint
+         *     - `canceledAt` is cleared (`endedAt` was already `null` during the grace period)
+         *     - The refreshed subscription is returned in the response body
+         *
+         *     **When this does NOT work:**
+         *     - Subscription was canceled immediately (`status` is `canceled`) — create a new subscription instead
+         *     - Grace period has already lapsed (`status` is now `canceled` and `endedAt` is set) — create a new subscription instead
+         *     - Subscription is already active (no-op rejected for clarity, not silently ignored)
+         */
+        post: operations["resumeSubscription"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/test-helpers/subscriptions/{subscriptionId}/fast-forward-renewal": {
@@ -732,23 +773,449 @@ export interface paths {
         trace?: never;
     };
 }
-export type webhooks = Record<string, never>;
+export interface webhooks {
+    "order.paid": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Order paid
+         * @description An order's payment was successful. `object` is the Order.
+         */
+        post: operations["onOrderPaid"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "order.canceled": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Order canceled
+         * @description An order was canceled. `object` is the Order.
+         */
+        post: operations["onOrderCanceled"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "order.chargeback_received": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Chargeback received
+         * @description A chargeback was received for an order. `entityType` is `order`, but
+         *     `object` is the Chargeback.
+         */
+        post: operations["onOrderChargebackReceived"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "order.chargeback_reversed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Chargeback reversed
+         * @description A previously received chargeback was reversed. `entityType` is `order`, but
+         *     `object` is the Chargeback.
+         */
+        post: operations["onOrderChargebackReversed"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "order.payment_failed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Order payment failed
+         * @description A payment failed and a dunning process was initiated for the order.
+         *     `entityType` is `order` and `object` is the Order.
+         */
+        post: operations["onOrderPaymentFailed"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "refund.completed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refund completed
+         * @description A refund was processed successfully. `object` is the Refund.
+         */
+        post: operations["onRefundCompleted"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "refund.failed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refund failed
+         * @description A refund failed to process. `object` is the Refund.
+         */
+        post: operations["onRefundFailed"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "refund.canceled": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refund canceled
+         * @description A refund was canceled before completing. `object` is the Refund.
+         */
+        post: operations["onRefundCanceled"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "subscription.started": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Subscription started
+         * @description A subscription was started. `object` is the Subscription.
+         */
+        post: operations["onSubscriptionStarted"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "subscription.canceled_immediately": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Subscription canceled immediately
+         * @description A subscription was canceled with immediate effect. `object` is the Subscription.
+         */
+        post: operations["onSubscriptionCanceledImmediately"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "subscription.canceled_with_grace_period": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Subscription canceled with grace period
+         * @description A subscription was canceled and will remain active until the end of its
+         *     grace period. `object` is the Subscription.
+         */
+        post: operations["onSubscriptionCanceledWithGracePeriod"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "subscription.cancellation_grace_period_completed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Subscription grace period completed
+         * @description A canceled subscription's grace period ended and the subscription is now
+         *     fully canceled. `object` is the Subscription.
+         */
+        post: operations["onSubscriptionCancellationGracePeriodCompleted"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "subscription.resumed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Subscription resumed
+         * @description A canceled subscription was resumed during its grace period. `object` is
+         *     the Subscription.
+         */
+        post: operations["onSubscriptionResumed"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "subscription.billing_updated": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Subscription billing updated
+         * @description A subscription's billing details changed server-side. In practice today
+         *     this is the mandate (payment method on file) — e.g. the customer completed
+         *     the hosted billing-update flow or the mandate was replaced
+         *     customer-service-side. `object` is the Subscription, enriched with the
+         *     current mandate (`object.mandate.method` and `object.mandate.maskedIdentifier`).
+         *     Use this to refresh the masked payment method identifier you display to the
+         *     customer without polling or a follow-up `GET /v1/subscriptions/{id}`.
+         */
+        post: operations["onSubscriptionBillingUpdated"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "checkout.paid": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Checkout paid
+         * @description A checkout was paid successfully. `object` is the Checkout.
+         */
+        post: operations["onCheckoutPaid"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "checkout.failed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Checkout payment failed
+         * @description A checkout payment failed. `object` is the Checkout.
+         */
+        post: operations["onCheckoutFailed"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "checkout.canceled": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Checkout canceled
+         * @description A checkout was canceled. `object` is the Checkout.
+         */
+        post: operations["onCheckoutCanceled"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "checkout.expired": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Checkout expired
+         * @description A checkout session expired before being paid. `object` is the Checkout.
+         */
+        post: operations["onCheckoutExpired"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "webhook.setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Webhook setup
+         * @description Verification call sent when a webhook endpoint is registered or its URL is
+         *     changed, to confirm the endpoint is reachable. `entityType` is `webhook` and
+         *     `object` is the (secret-free) endpoint config. Acknowledge with any 2xx; no
+         *     other action is required. This call is not persisted and is not retried, and
+         *     therefore omits the `links` field carried by regular event deliveries.
+         */
+        post: operations["onWebhookSetup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+}
 export interface components {
     schemas: {
         /** @description Monetary value with currency */
         Money: {
             /**
-             * @description The amount as a decimal string.
-             *     Uses string type to preserve precision for financial calculations.
+             * @description The amount as a decimal string. Sent and returned as a string to
+             *     preserve precision for financial calculations.
+             *
+             *     The number of required decimal places is **currency-dependent**: it
+             *     equals the currency's ISO 4217 minor-unit count — the same rule the
+             *     server enforces via [moneyphp/money](https://github.com/moneyphp/money)'s
+             *     `DecimalMoneyParser`. The `(value, currency)` pair is validated
+             *     together (see the `oneOf` below); mixing precisions is rejected:
+             *
+             *     - 2 decimals — EUR, USD (and most currencies): `"10.00"` ✓, `"10"` ✗, `"10.0"` ✗, `"10.000"` ✗
+             *     - 0 decimals — e.g. JPY: `"1000"` ✓, `"1000.00"` ✗   *(not yet enabled)*
+             *     - 3 decimals — e.g. BHD, KWD, OMR, TND: `"1.000"` ✓, `"1.00"` ✗   *(not yet enabled)*
+             *
+             *     Because the value is a decimal amount (not minor units), `"1000"`
+             *     means one thousand units — valid only for a 0-decimal currency; for
+             *     EUR/USD you must write `"1000.00"`.
              * @example 99.99
              */
             value: string;
             /**
-             * @description ISO 4217 currency code
+             * @description ISO 4217 currency code. Vatly aligns its supported currency set
+             *     with Mollie's; currencies are enabled as PSP support and
+             *     downstream tax/FX coverage are in place. Expansion beyond this
+             *     list is tracked in issue #1404.
              * @example EUR
+             * @enum {string}
              */
-            currency: string;
-        };
+            currency: "EUR" | "USD";
+        } & ({
+            currency?: unknown;
+            value?: unknown;
+        } | {
+            /** @enum {unknown} */
+            currency?: "BIF" | "CLP" | "DJF" | "GNF" | "ISK" | "JPY" | "KMF" | "KRW" | "PYG" | "RWF" | "UGX" | "VND" | "VUV" | "XAF" | "XOF" | "XPF";
+            value?: unknown;
+        } | {
+            /** @enum {unknown} */
+            currency?: "BHD" | "IQD" | "JOD" | "KWD" | "LYD" | "OMR" | "TND";
+            value?: unknown;
+        });
         /** @description HATEOAS link to a related resource */
         Link: {
             /**
@@ -863,7 +1330,9 @@ export interface components {
             country?: string | null;
             /**
              * Format: email
-             * @description Email address
+             * @description Email address.
+             *     Internationalized domains must use their Punycode (ASCII) form
+             *     per RFC 3492 — e.g. `billing@xn--mller-kva.de`.
              * @example billing@acme.com
              */
             email?: string | null;
@@ -888,13 +1357,33 @@ export interface components {
             /** @description Link to the previous page (null if on the first page) */
             prev?: components["schemas"]["Link"] | null;
         };
-        /** @description Standard error response */
+        /**
+         * @description Standard error response.
+         *
+         *     Every non-validation error path returns this shape — `message` is
+         *     always present, and `details` (if present) is an object carrying
+         *     structured context attached by the originating exception. HTTP
+         *     status code is the primary programmatic discriminator.
+         */
         Error: {
             /**
              * @description Human-readable error message
              * @example The requested resource was not found.
              */
             message: string;
+            /**
+             * @description Optional structured context attached by the originating exception.
+             *     Shape depends on the specific error case; clients should treat
+             *     unknown keys as forward-compatible additions and rely on the HTTP
+             *     status code for branching logic.
+             * @example {
+             *       "resource_type": "checkout",
+             *       "resource_id": "checkout_abc123"
+             *     }
+             */
+            details?: {
+                [key: string]: unknown;
+            };
         };
         /** @description Validation error response with field-specific errors */
         ValidationError: {
@@ -931,17 +1420,24 @@ export interface components {
              */
             id: string;
             /**
-             * @description Resource type identifier
-             * @example checkout
-             * @constant
+             * @description Resource type identifier (enum property replaced by openapi-typescript)
+             * @enum {string}
              */
             resource: "checkout";
             /**
-             * @description ID of the order created from this checkout.
-             *     Only present after checkout completion.
+             * @description ID of the customer associated with this checkout.
+             *     Null until a customer has been associated (for an anonymous
+             *     checkout this happens when the buyer completes payment).
+             * @example customer_7kBmRtPvXw2NjLhYcZaE
+             */
+            customerId: string | null;
+            /**
+             * @description ID of the order created from this checkout. Always present in the
+             *     payload; `null` until the checkout completes, then set to the created
+             *     order id.
              * @example order_Tk7mNvBxKw2RjTgYcZaE
              */
-            orderId?: string | null;
+            orderId: string | null;
             /**
              * @description Whether this checkout is in test mode
              * @example false
@@ -989,8 +1485,8 @@ export interface components {
                 checkoutUrl: components["schemas"]["Link"];
                 /** @description Link to this checkout resource */
                 self: components["schemas"]["Link"];
-                /** @description Link to the created order (only after completion) */
-                order?: components["schemas"]["Link"] | null;
+                /** @description Link to the created order. Always present; `null` until the checkout completes. */
+                order: components["schemas"]["Link"] | null;
             };
         };
         /** @description A product to add to the checkout */
@@ -1024,15 +1520,21 @@ export interface components {
         /** @description Request body for creating a new checkout */
         CreateCheckoutRequest: {
             /**
-             * Format: uri
-             * @description URL to redirect customers after successful payment
-             * @example https://example.com/success?session_id=checkout_QdEpFhdSrG4Y3DnfsdqsH
+             * @description URL to redirect customers after successful payment.
+             *
+             *     You may include the literal `{CHECKOUT_ID}` placeholder anywhere in the
+             *     URL (e.g. `https://example.com/return?checkout_id={CHECKOUT_ID}`). Vatly
+             *     substitutes it with this checkout's id at creation time, so the host can
+             *     learn the checkout id on the redirect back without any server-side token
+             *     store. Only `{CHECKOUT_ID}` is supported.
+             * @example https://example.com/return?checkout_id={CHECKOUT_ID}
              */
             redirectUrlSuccess: string;
             /**
-             * Format: uri
-             * @description URL to redirect customers if they cancel the checkout
-             * @example https://example.com/canceled
+             * @description URL to redirect customers if they cancel the checkout.
+             *
+             *     Supports the same `{CHECKOUT_ID}` placeholder as `redirectUrlSuccess`.
+             * @example https://example.com/canceled?checkout_id={CHECKOUT_ID}
              */
             redirectUrlCanceled: string;
             /**
@@ -1081,7 +1583,10 @@ export interface components {
             testmode: boolean;
             /**
              * Format: email
-             * @description Customer's email address
+             * @description Customer's email address.
+             *     Internationalized domains are stored and returned in their
+             *     Punycode (ASCII) form per RFC 3492 — e.g. `user@xn--mller-kva.de`.
+             *     Convert back to Unicode for display in your own UI.
              * @example customer@example.com
              */
             email: string;
@@ -1104,6 +1609,10 @@ export interface components {
              * Format: email
              * @description Customer's email address.
              *     Must be unique within the merchant's account for the given testmode.
+             *     Internationalized domains must be submitted in their Punycode (ASCII)
+             *     form per RFC 3492 — e.g. `user@xn--mller-kva.de` instead of
+             *     `user@müller.de`. Submitting a Unicode domain returns a validation
+             *     error.
              * @example customer@example.com
              */
             email: string;
@@ -1244,16 +1753,15 @@ export interface components {
              */
             id: string;
             /**
-             * @description Resource type identifier
-             * @example order
-             * @constant
+             * @description Resource type identifier (enum property replaced by openapi-typescript)
+             * @enum {string}
              */
             resource: "order";
             /**
-             * @description ID of the customer who made this purchase. Only present when a customer is associated.
+             * @description ID of the customer who made this purchase. Always present; `null` for orders with no associated customer.
              * @example customer_Lp3mNvBxKw7RjTgYcZaE
              */
-            customerId?: string | null;
+            customerId: string | null;
             /**
              * @description Whether this order is in test mode
              * @example false
@@ -1292,6 +1800,10 @@ export interface components {
             total: components["schemas"]["Money"];
             /** @description Subtotal amount before taxes */
             subtotal: components["schemas"]["Money"];
+            /** @description Amount of the captured payment returned to the customer, before taxes, via refund or chargeback (settled) */
+            reversedSubtotal: components["schemas"]["Money"];
+            /** @description Remaining amount that can still be refunded, before taxes. */
+            refundableSubtotal: components["schemas"]["Money"];
             /** @description Tax breakdown by rate */
             taxSummary: components["schemas"]["TaxSummaryItem"][];
             /** @description Line items in this order */
@@ -1302,10 +1814,10 @@ export interface components {
             links: {
                 /** @description Link to this order resource */
                 self: components["schemas"]["Link"];
-                /** @description Link to the customer who made this purchase. Only present when a customer is associated. */
-                customer?: components["schemas"]["Link"];
-                /** @description Link to the customer-facing invoice in the customer portal */
-                customerInvoice?: components["schemas"]["Link"];
+                /** @description Link to the customer who made this purchase. Null for orders with no associated customer. */
+                customer: components["schemas"]["Link"] | null;
+                /** @description Link to the customer-facing invoice page in the customer portal (text/html) */
+                customerInvoice: components["schemas"]["Link"];
             };
         };
         /** @description A line item in an order */
@@ -1339,9 +1851,20 @@ export interface components {
             subtotal: components["schemas"]["Money"];
             /** @description Tax breakdown by rate for this line */
             taxes: components["schemas"]["TaxSummaryItem"][];
+            /**
+             * @description The product type this line links to; null when the line has no product link.
+             * @example subscription
+             * @enum {string|null}
+             */
+            productType?: "one_off_product" | "subscription_plan" | "subscription" | "billing_details_verification" | "auth_request_product" | null;
+            /**
+             * @description The linked product's id; for a `subscription` line this is the public `subscription_…` id.
+             * @example subscription_Hn5xWqVfKm8RjTgYbUcP
+             */
+            productId?: string | null;
         };
-        /** @description A signed URL to update order billing address */
-        AddressUpdateLink: {
+        /** @description A signed URL for the customer to update invoice details (billing address, VAT number, company name) */
+        InvoiceUpdateLink: {
             /**
              * Format: uri
              * @description Signed URL to the address update page.
@@ -1367,17 +1890,17 @@ export interface components {
              */
             id: string;
             /**
-             * @description Resource type identifier
-             * @example refund
-             * @constant
+             * @description Resource type identifier (enum property replaced by openapi-typescript)
+             * @enum {string}
              */
             resource: "refund";
             /**
-             * @description ID of the credit note order created for this refund.
-             *     Only present after the refund is processed.
+             * @description ID of the credit note order created for this refund. Always present in
+             *     the payload; `null` until the refund is processed, then set to the
+             *     credit-note order id.
              * @example order_Vr8kQdFhSrG4Y3DnfsdqH
              */
-            orderId?: string | null;
+            orderId: string | null;
             /**
              * @description ID of the customer receiving the refund
              * @example customer_Lp3mNvBxKw7RjTgYcZaE
@@ -1425,8 +1948,8 @@ export interface components {
                 self: components["schemas"]["Link"];
                 /** @description Link to the original order */
                 originalOrder: components["schemas"]["Link"];
-                /** @description Link to the credit note order (if created) */
-                order?: components["schemas"]["Link"] | null;
+                /** @description Link to the credit note order. Always present; `null` until the credit-note order is created. */
+                order: components["schemas"]["Link"] | null;
             };
         };
         /** @description A line item in a refund */
@@ -1494,11 +2017,15 @@ export interface components {
              */
             id: string;
             /**
-             * @description Resource type identifier
-             * @example chargeback
-             * @constant
+             * @description Resource type identifier (enum property replaced by openapi-typescript)
+             * @enum {string}
              */
             resource: "chargeback";
+            /**
+             * @description ID of the customer the chargeback was raised against
+             * @example customer_Lp3mNvBxKw7RjTgYcZaE
+             */
+            customerId: string;
             /**
              * @description Whether this chargeback is in test mode
              * @example false
@@ -1510,6 +2037,18 @@ export interface components {
              * @example 2024-01-15T10:30:00Z
              */
             createdAt: string;
+            /**
+             * @description Current status of the chargeback dispute:
+             *     - `pending` - Dispute received, awaiting action
+             *     - `accepted` - Merchant accepted the dispute
+             *     - `rejected` - Dispute rejected
+             *     - `evidence_submitted` - Evidence submitted, awaiting decision
+             *     - `won` - Dispute resolved in the merchant's favor
+             *     - `lost` - Dispute resolved in the customer's favor
+             * @example pending
+             * @enum {string}
+             */
+            status: "pending" | "accepted" | "rejected" | "evidence_submitted" | "won" | "lost";
             /** @description Amount of the chargeback */
             amount: components["schemas"]["Money"];
             /**
@@ -1517,6 +2056,12 @@ export interface components {
              *     May differ from `amount` due to currency conversion or fees.
              */
             settlementAmount: components["schemas"]["Money"];
+            /** @description Total chargeback amount including taxes */
+            total: components["schemas"]["Money"];
+            /** @description Chargeback subtotal before taxes */
+            subtotal: components["schemas"]["Money"];
+            /** @description Tax breakdown by rate for the chargeback */
+            taxSummary: components["schemas"]["TaxSummaryItem"][];
             /**
              * @description Reason code or description for the chargeback.
              *     Common reasons include:
@@ -1534,24 +2079,30 @@ export interface components {
              */
             originalOrderId: string;
             /**
-             * @description ID of the credit note order created for this chargeback.
-             *     Only present after the chargeback is processed.
+             * @description ID of the credit note order created for this chargeback. Always present
+             *     in the payload; `null` until the chargeback is processed, then set to the
+             *     credit-note order id.
              * @example order_Rk5pQrSvWm8NjLhYbUcP
              */
-            orderId?: string | null;
+            orderId: string | null;
             /** @description HATEOAS links to related resources */
             links: {
                 /** @description Link to this chargeback resource */
                 self: components["schemas"]["Link"];
                 /** @description Link to the original order */
                 originalOrder: components["schemas"]["Link"];
-                /** @description Link to the credit note order (if created) */
-                order?: components["schemas"]["Link"] | null;
+                /** @description Link to the credit note order. Always present; `null` until the credit-note order is created. */
+                order: components["schemas"]["Link"] | null;
             };
         };
         /**
-         * @description A webhook event represents a domain event that was sent to a webhook endpoint.
-         *     Each event contains the full resource payload at the time the event occurred.
+         * @description A persisted webhook event — the record returned by `GET /webhook-events/{eventId}`.
+         *     It captures a domain event that was delivered to your endpoint, including the full
+         *     resource payload at the time the event occurred.
+         *
+         *     This is the *stored* resource. For the shape Vatly POSTs to your endpoint on each
+         *     live delivery (which additionally includes the `webhook.setup` verification call),
+         *     see `WebhookDelivery`.
          */
         WebhookEvent: {
             /**
@@ -1566,11 +2117,12 @@ export interface components {
              */
             resource: "webhook_event";
             /**
-             * @description Name of the event that triggered this webhook. Possible values:
+             * @description Name of the event that triggered this webhook:
              *     - `order.paid` - Order payment was successful
              *     - `order.canceled` - Order was canceled
              *     - `order.chargeback_received` - Chargeback was received for an order
              *     - `order.chargeback_reversed` - Chargeback was reversed
+             *     - `order.payment_failed` - A payment failed and a dunning process was initiated for the order
              *     - `refund.completed` - Refund was processed successfully
              *     - `refund.failed` - Refund processing failed
              *     - `refund.canceled` - Refund was canceled
@@ -1578,10 +2130,22 @@ export interface components {
              *     - `subscription.canceled_immediately` - Subscription was canceled immediately
              *     - `subscription.canceled_with_grace_period` - Subscription was canceled with a grace period
              *     - `subscription.cancellation_grace_period_completed` - Subscription grace period ended
+             *     - `subscription.resumed` - A canceled subscription was resumed during its grace period
+             *     - `subscription.billing_updated` - A subscription's billing details changed; in practice today the mandate (payment method on file), e.g. to refresh the masked payment method identifier shown to the customer
+             *     - `checkout.paid` - Checkout was paid successfully
+             *     - `checkout.failed` - Checkout payment failed
+             *     - `checkout.canceled` - Checkout was canceled
              *     - `checkout.expired` - Checkout session expired
+             *
+             *     `webhook.setup` is intentionally absent: the verification handshake is not
+             *     persisted and so never appears on this resource (see `WebhookDelivery`).
+             *
+             *     This list is kept in sync with the webhook transformer registry by
+             *     `php artisan openapi:audit-webhook-drift`.
              * @example order.paid
+             * @enum {string}
              */
-            eventName: string;
+            eventName: "order.paid" | "order.canceled" | "order.chargeback_received" | "order.chargeback_reversed" | "order.payment_failed" | "refund.completed" | "refund.failed" | "refund.canceled" | "subscription.started" | "subscription.canceled_immediately" | "subscription.canceled_with_grace_period" | "subscription.cancellation_grace_period_completed" | "subscription.resumed" | "subscription.billing_updated" | "checkout.paid" | "checkout.failed" | "checkout.canceled" | "checkout.expired";
             /**
              * @description Type of the resource this event relates to
              * @example order
@@ -1593,11 +2157,32 @@ export interface components {
              */
             entityId: string;
             /**
-             * @description The full resource payload at the time of the event.
-             *     The shape depends on the `entityType` (e.g., Order, Refund, Chargeback, Subscription, Checkout).
+             * @description The full resource payload at the time of the event, serialized identically
+             *     to the corresponding REST resource. The concrete shape is selected by the
+             *     payload's own `resource` field (the discriminator):
+             *       - `order.paid`, `order.canceled`, `order.payment_failed` → Order
+             *       - `order.chargeback_received`, `order.chargeback_reversed` → Chargeback
+             *       - `refund.*` → Refund
+             *       - `subscription.*` → Subscription
+             *       - `checkout.*` → Checkout
+             *
+             *     Note `object.resource` may differ from `entityType`: chargeback events carry
+             *     `entityType: order` (the order the chargeback belongs to) but a Chargeback object.
              */
-            object: Record<string, never>;
-            /** @description HATEOAS links to related resources */
+            object: components["schemas"]["Order"] | components["schemas"]["Chargeback"] | components["schemas"]["Refund"] | components["schemas"]["Subscription"] | components["schemas"]["Checkout"];
+            /**
+             * Format: date-time
+             * @description ISO 8601 timestamp of when the webhook event was created.
+             * @example 2026-05-21T14:32:08+00:00
+             */
+            createdAt: string;
+            /**
+             * @description Whether the event originated from a test-mode resource.
+             *     `true` for events created with a `test_` prefixed token, `false` for live events.
+             * @example false
+             */
+            testmode: boolean;
+            /** @description HATEOAS links to related resources. Always present on the persisted event. */
             links: {
                 /** @description Link to this webhook event resource */
                 self: components["schemas"]["Link"];
@@ -1614,9 +2199,8 @@ export interface components {
              */
             id: string;
             /**
-             * @description Resource type identifier
-             * @example subscription
-             * @constant
+             * @description Resource type identifier (enum property replaced by openapi-typescript)
+             * @enum {string}
              */
             resource: "subscription";
             /**
@@ -1628,7 +2212,7 @@ export interface components {
              * @description ID of the subscription plan this subscription is based on
              * @example subscription_plan_Wt5mNvBxKw7YcZaEjLhR
              */
-            subscriptionPlanId?: string;
+            subscriptionPlanId: string;
             /**
              * @description Whether this subscription is in test mode
              * @example false
@@ -1677,46 +2261,53 @@ export interface components {
              */
             status: "active" | "created" | "trial" | "on_grace_period" | "paused" | "canceled";
             /**
+             * @description Payment method on file for this subscription, as an inline summary
+             *     intended for billing-portal rendering ("Visa ending in 4242"). May
+             *     be `null` when the subscription has no mandate yet (e.g. ended /
+             *     canceled-before-payment states).
+             */
+            mandate: components["schemas"]["Mandate"] | null;
+            /**
              * Format: date-time
              * @description When the subscription started (ISO 8601 format)
              * @example 2024-01-15T10:30:00Z
              */
-            startedAt?: string | null;
+            startedAt: string | null;
             /**
              * Format: date-time
              * @description When the subscription ended (ISO 8601 format)
              */
-            endedAt?: string | null;
+            endedAt: string | null;
             /**
              * Format: date-time
              * @description When the subscription was canceled (ISO 8601 format)
              */
-            cancelledAt?: string | null;
+            canceledAt: string | null;
             /**
              * Format: date-time
              * @description When the subscription was last renewed (ISO 8601 format)
              * @example 2024-02-15T10:30:00Z
              */
-            renewedAt?: string | null;
+            renewedAt: string | null;
             /**
              * Format: date-time
              * @description Current billing period end date (ISO 8601 format)
              * @example 2024-03-15T10:30:00Z
              */
-            renewedUntil?: string | null;
+            renewedUntil: string | null;
             /**
              * Format: date-time
              * @description When the next renewal will be attempted (ISO 8601 format).
              *     Null if subscription is canceled or ended.
              * @example 2024-03-15T10:30:00Z
              */
-            nextRenewalAt?: string | null;
+            nextRenewalAt: string | null;
             /**
              * Format: date-time
              * @description When the trial period ends (ISO 8601 format).
              *     Null if not in trial or trial has ended.
              */
-            trialUntil?: string | null;
+            trialUntil: string | null;
             /** @description HATEOAS links to related resources */
             links: {
                 /** @description Link to this subscription resource */
@@ -1766,11 +2357,25 @@ export interface components {
             invoiceImmediately: boolean;
             /**
              * Format: date
-             * @description Reset the billing anchor to this date.
-             *     Cannot be combined with `trialUntil`.
+             * @description Set the billing anchor to a specific calendar date (YYYY-MM-DD,
+             *     interpreted in UTC). The new billing cycle is recalculated around
+             *     this anchor. Date-only by design — the anchor identifies a day,
+             *     not an instant, so daylight-saving transitions don't shift it.
+             *     Cannot be combined with `resetAnchor`.
              * @example 2024-02-01
              */
             anchor?: string | null;
+            /**
+             * @description Reset the billing anchor to "now" — the moment the update
+             *     is processed becomes the new cycle anchor, and future
+             *     renewals align to it. Useful when a customer upgrades
+             *     mid-cycle and you want the new plan's billing period to
+             *     start fresh from today.
+             *     Cannot be combined with `anchor`.
+             * @default false
+             * @example true
+             */
+            resetAnchor: boolean;
             /**
              * Format: date-time
              * @description Extend or set a trial period until this date (ISO 8601 format).
@@ -1798,6 +2403,43 @@ export interface components {
              *     Customer can modify these values in the hosted form.
              */
             billingAddress?: components["schemas"]["BillingAddress"] | null;
+        };
+        /**
+         * @description A mandate represents an authorization to charge a customer's payment method
+         *     on a recurring basis (cards, SEPA Direct Debit, PayPal, Bacs).
+         *
+         *     This shape is the inline summary exposed on subscriptions — enough to
+         *     render "Visa ending in 4242" in a billing portal without an extra round
+         *     trip. A dedicated `/v1/mandates/{id}` endpoint with richer detail (status,
+         *     validity timestamps, billing snapshot) is on the roadmap; fields here are
+         *     forward-compatible additions to that future schema.
+         */
+        Mandate: {
+            /**
+             * @description Normalized payment method category, provider-agnostic:
+             *     - `card` — credit/debit card (incl. Apple Pay, Google Pay wallets)
+             *     - `sepa_debit` — SEPA Direct Debit (incl. iDEAL, Bancontact, KBC and
+             *       other rail aliases that settle into a directdebit mandate)
+             *     - `paypal` — PayPal billing agreement
+             *     - `bacs_debit` — UK Bacs Direct Debit
+             * @example card
+             * @enum {string}
+             */
+            method: "card" | "sepa_debit" | "paypal" | "bacs_debit";
+            /**
+             * @description Customer-facing masked identifier for the payment method on file:
+             *     the last 4 of a card (`"4242"`), a masked IBAN (`"NL91****4300"`),
+             *     a masked PayPal email (`"j***@example.com"`), or last 4 of a Bacs
+             *     account (`"****5678"`).
+             *
+             *     May briefly be `null` for freshly-subscribed customers when the
+             *     underlying authorization event doesn't carry the masked identifier
+             *     inline — in that case it lands on a follow-up sync (runs at most
+             *     every 5 minutes) and the field updates from `null` to the resolved
+             *     value once the sync completes.
+             * @example 4242
+             */
+            maskedIdentifier: string | null;
         };
         /** @description Simplified tax rate information */
         TaxSummaryRate: {
@@ -1846,8 +2488,161 @@ export interface components {
              */
             descriptionAdditionalLine?: string | null;
         };
+        /**
+         * @description A registered webhook endpoint configuration — the subject of a `webhook.setup`
+         *     verification call. Never includes the signing secret.
+         */
+        Webhook: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            resource: "webhook";
+            /**
+             * @description The webhook endpoint identifier.
+             * @example webhook_QdEpFhdSrG4Y3DnfsdqsH
+             */
+            id: string;
+            /**
+             * Format: uri
+             * @description The endpoint the verification call was sent to.
+             * @example https://merchant.example/webhooks/vatly
+             */
+            url: string;
+            /** @example true */
+            testmode: boolean;
+        };
+        /**
+         * @description The envelope Vatly POSTs to your configured webhook endpoint for each delivery.
+         *
+         *     Identical to the persisted `WebhookEvent`, with two differences that exist only on
+         *     the wire:
+         *       - it additionally covers the `webhook.setup` verification call (`entityType`
+         *         `webhook`, `object` is the secret-free endpoint config), and
+         *       - that setup call is not persisted and omits `links`, so `links` is not required
+         *         on a delivery.
+         *
+         *     Every delivery is signed: the `Vatly-Signature` header carries an HMAC-SHA256 of
+         *     the raw body and `Vatly-Event-Id` carries a retry-stable dedup key (see the
+         *     operation parameters).
+         */
+        WebhookDelivery: {
+            /**
+             * @description Unique identifier for the webhook event
+             * @example webhook_event_Qk8pRtSvWm2NjLhYcZaE
+             */
+            id: string;
+            /**
+             * @description Resource type identifier
+             * @example webhook_event
+             * @constant
+             */
+            resource: "webhook_event";
+            /**
+             * @description Name of the event that triggered this webhook:
+             *     - `order.paid` - Order payment was successful
+             *     - `order.canceled` - Order was canceled
+             *     - `order.chargeback_received` - Chargeback was received for an order
+             *     - `order.chargeback_reversed` - Chargeback was reversed
+             *     - `order.payment_failed` - A payment failed and a dunning process was initiated for the order
+             *     - `refund.completed` - Refund was processed successfully
+             *     - `refund.failed` - Refund processing failed
+             *     - `refund.canceled` - Refund was canceled
+             *     - `subscription.started` - Subscription was started
+             *     - `subscription.canceled_immediately` - Subscription was canceled immediately
+             *     - `subscription.canceled_with_grace_period` - Subscription was canceled with a grace period
+             *     - `subscription.cancellation_grace_period_completed` - Subscription grace period ended
+             *     - `subscription.resumed` - A canceled subscription was resumed during its grace period
+             *     - `subscription.billing_updated` - A subscription's billing details changed; in practice today the mandate (payment method on file), e.g. to refresh the masked payment method identifier shown to the customer
+             *     - `checkout.paid` - Checkout was paid successfully
+             *     - `checkout.failed` - Checkout payment failed
+             *     - `checkout.canceled` - Checkout was canceled
+             *     - `checkout.expired` - Checkout session expired
+             *     - `webhook.setup` - Verification call sent when an endpoint is registered or its URL changes (`entityType` is `webhook`)
+             *
+             *     This list is the single source of truth for SDK generators and is kept in
+             *     sync with the webhook transformer registry by `php artisan openapi:audit-webhook-drift`.
+             * @example order.paid
+             * @enum {string}
+             */
+            eventName: "order.paid" | "order.canceled" | "order.chargeback_received" | "order.chargeback_reversed" | "order.payment_failed" | "refund.completed" | "refund.failed" | "refund.canceled" | "subscription.started" | "subscription.canceled_immediately" | "subscription.canceled_with_grace_period" | "subscription.cancellation_grace_period_completed" | "subscription.resumed" | "subscription.billing_updated" | "checkout.paid" | "checkout.failed" | "checkout.canceled" | "checkout.expired" | "webhook.setup";
+            /**
+             * @description Type of the resource this event relates to
+             * @example order
+             */
+            entityType: string;
+            /**
+             * @description ID of the resource this event relates to
+             * @example order_Hn5xWqVfKm8RjTgYbUcP
+             */
+            entityId: string;
+            /**
+             * @description The full resource payload at the time of the event, serialized identically
+             *     to the corresponding REST resource. The concrete shape is selected by the
+             *     payload's own `resource` field (the discriminator):
+             *       - `order.paid`, `order.canceled`, `order.payment_failed` → Order
+             *       - `order.chargeback_received`, `order.chargeback_reversed` → Chargeback
+             *       - `refund.*` → Refund
+             *       - `subscription.*` → Subscription
+             *       - `checkout.*` → Checkout
+             *       - `webhook.setup` → Webhook (the endpoint config; verification handshake)
+             *
+             *     Note `object.resource` may differ from `entityType`: chargeback events carry
+             *     `entityType: order` (the order the chargeback belongs to) but a Chargeback object.
+             */
+            object: components["schemas"]["Order"] | components["schemas"]["Chargeback"] | components["schemas"]["Refund"] | components["schemas"]["Subscription"] | components["schemas"]["Checkout"] | components["schemas"]["Webhook"];
+            /**
+             * Format: date-time
+             * @description ISO 8601 timestamp of when the webhook event was created.
+             * @example 2026-05-21T14:32:08+00:00
+             */
+            createdAt: string;
+            /**
+             * @description Whether the event originated from a test-mode resource.
+             *     `true` for events created with a `test_` prefixed token, `false` for live events.
+             * @example false
+             */
+            testmode: boolean;
+            /**
+             * @description HATEOAS links to related resources. Present on event deliveries; omitted on
+             *     the `webhook.setup` verification call, which is not a persisted resource.
+             */
+            links?: {
+                /** @description Link to this webhook event resource */
+                self: components["schemas"]["Link"];
+            };
+        };
     };
     responses: {
+        /**
+         * @description Catch-all for any status not explicitly enumerated on the operation.
+         *     Branch on the HTTP status code:
+         *     - `400` Bad Request — malformed request (e.g. invalid JSON body)
+         *     - `429` Too Many Requests — rate limit exceeded; the `Retry-After`
+         *       header gives the number of seconds to wait before retrying
+         *     - `500` Internal Server Error — an unexpected error occurred; the
+         *       request can typically be retried
+         *
+         *     The body is always the standard `Error` shape.
+         */
+        UnexpectedError: {
+            headers: {
+                /**
+                 * @description Present on `429` responses — seconds to wait before retrying.
+                 * @example 60
+                 */
+                "Retry-After"?: number;
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "message": "An unexpected error occurred. Please try again later."
+                 *     }
+                 */
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /** @description Unauthorized - Authentication credentials were missing or invalid */
         Unauthorized: {
             headers: {
@@ -1908,6 +2703,29 @@ export interface components {
                 "application/json": components["schemas"]["ValidationError"];
             };
         };
+        /**
+         * @description Conflict — The request could not be completed because of one of
+         *     the following:
+         *
+         *     - **Idempotency replay mismatch** (`Idempotency-Key` reused with
+         *       different request parameters). Retry with the original parameters
+         *       or generate a new key.
+         *     - **Optimistic concurrency conflict** (two writers modifying the
+         *       same resource at the same version). Reload the latest state
+         *       and retry — the conflict resolves itself unless contention is
+         *       sustained.
+         *
+         *     The HTTP status (`409`) is the same for both; the `message`
+         *     distinguishes them.
+         */
+        Conflict: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /** @description Not Found - The requested resource does not exist */
         NotFound: {
             headers: {
@@ -1922,74 +2740,27 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description Bad Request - The request was malformed or invalid */
-        BadRequest: {
+        /**
+         * @description Acknowledged. Return any 2xx status to confirm receipt. A non-2xx response
+         *     or a timeout causes Vatly to retry the delivery with backoff.
+         */
+        Acknowledged: {
             headers: {
                 [name: string]: unknown;
             };
-            content: {
-                /**
-                 * @example {
-                 *       "message": "Invalid request format"
-                 *     }
-                 */
-                "application/json": components["schemas"]["Error"];
-            };
+            content?: never;
         };
         /**
-         * @description Unprocessable Entity - A referenced resource exists but was created in a different mode.
-         *     Switch between live/test API tokens to access the correct resources.
+         * @description Endpoint reachable. Return any 2xx status to confirm. Unlike event
+         *     deliveries, the setup call is a synchronous verification check: a non-2xx
+         *     response or timeout fails endpoint registration/verification and is NOT
+         *     retried.
          */
-        TestmodeMismatch: {
+        SetupAcknowledged: {
             headers: {
                 [name: string]: unknown;
             };
-            content: {
-                /**
-                 * @example {
-                 *       "message": "The given data was invalid.",
-                 *       "errors": {
-                 *         "customerId": [
-                 *           "Customer exists, but the wrong mode is used. Try switching live / test API keys."
-                 *         ]
-                 *       }
-                 *     }
-                 */
-                "application/json": components["schemas"]["ValidationError"];
-            };
-        };
-        /** @description Too Many Requests - Rate limit exceeded */
-        TooManyRequests: {
-            headers: {
-                /**
-                 * @description Number of seconds to wait before retrying
-                 * @example 60
-                 */
-                "Retry-After"?: number;
-                [name: string]: unknown;
-            };
-            content: {
-                /**
-                 * @example {
-                 *       "message": "Too many requests. Please try again later."
-                 *     }
-                 */
-                "application/json": components["schemas"]["Error"];
-            };
-        };
-        /** @description Internal Server Error - An unexpected error occurred */
-        InternalServerError: {
-            headers: {
-                [name: string]: unknown;
-            };
-            content: {
-                /**
-                 * @example {
-                 *       "message": "An unexpected error occurred. Please try again later."
-                 *     }
-                 */
-                "application/json": components["schemas"]["Error"];
-            };
+            content?: never;
         };
     };
     parameters: {
@@ -2012,6 +2783,22 @@ export interface components {
          * @example checkout_Rk5pQrSvWm8NjLhYbUcP
          */
         endingBefore: string;
+        /**
+         * @description A unique key the client generates per logical mutating operation to
+         *     make retries safe. Vatly stores the first response keyed by
+         *     `(token, endpoint, key)` and returns it verbatim on subsequent
+         *     requests with the same key, setting `Idempotent-Replayed: true` on
+         *     the replayed response.
+         *
+         *     Replaying with a different request body or different query
+         *     parameters returns `409 Conflict`. Keys are scoped per endpoint and
+         *     retained for 24 hours.
+         *
+         *     Recommended format: UUIDv4. Send on every mutating request
+         *     (POST, PATCH, PUT, DELETE) where retry safety matters.
+         * @example 9f6a3b1c-7e2d-4f7b-9c5a-2c1d5b7e9f3a
+         */
+        idempotencyKey: string;
         /**
          * @description Unique identifier of the checkout
          * @example checkout_QdEpFhdSrG4Y3DnfsdqsH
@@ -2057,9 +2844,36 @@ export interface components {
          * @example webhook_event_Qk8pRtSvWm2NjLhYcZaE
          */
         eventId: string;
+        /**
+         * @description HMAC-SHA256 signature of the raw request body, formatted `t=<unix-timestamp>,v1=<hex>`.
+         *     Recompute it over the exact bytes received and compare before trusting the payload.
+         *     A fresh signature is sent on every delivery attempt (initial and retries).
+         * @example t=1716301928,v1=5f3cbe2a9d1e4c7b8a0f6d2e1c3b4a5968778695a4b3c2d1e0f9a8b7c6d5e4f3a
+         */
+        VatlySignature: string;
+        /**
+         * @description Stable identifier for this event, constant across delivery retries. Use it as an
+         *     idempotency / dedup key so a retried delivery is not processed twice.
+         * @example webhook_event_Qk8pRtSvWm2NjLhYcZaE
+         */
+        VatlyEventId: string;
     };
-    requestBodies: never;
-    headers: never;
+    requestBodies: {
+        WebhookDelivery: {
+            content: {
+                "application/json": components["schemas"]["WebhookDelivery"];
+            };
+        };
+    };
+    headers: {
+        /**
+         * @description Present and set to `true` when the response was replayed from a
+         *     previously stored result keyed by `Idempotency-Key`. Absent (or
+         *     `false`) for first-time requests.
+         * @example true
+         */
+        IdempotentReplayed: boolean;
+    };
     pathItems: never;
 }
 export type $defs = Record<string, never>;
@@ -2105,6 +2919,7 @@ export interface operations {
                      *         {
                      *           "id": "checkout_QdEpFhdSrG4Y3DnfsdqsH",
                      *           "resource": "checkout",
+                     *           "customerId": null,
                      *           "orderId": null,
                      *           "testmode": false,
                      *           "redirectUrlSuccess": "https://example.com/success",
@@ -2151,12 +2966,30 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             422: components["responses"]["ValidationFailed"];
+            default: components["responses"]["UnexpectedError"];
         };
     };
     createCheckout: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /**
+                 * @description A unique key the client generates per logical mutating operation to
+                 *     make retries safe. Vatly stores the first response keyed by
+                 *     `(token, endpoint, key)` and returns it verbatim on subsequent
+                 *     requests with the same key, setting `Idempotent-Replayed: true` on
+                 *     the replayed response.
+                 *
+                 *     Replaying with a different request body or different query
+                 *     parameters returns `409 Conflict`. Keys are scoped per endpoint and
+                 *     retained for 24 hours.
+                 *
+                 *     Recommended format: UUIDv4. Send on every mutating request
+                 *     (POST, PATCH, PUT, DELETE) where retry safety matters.
+                 * @example 9f6a3b1c-7e2d-4f7b-9c5a-2c1d5b7e9f3a
+                 */
+                "Idempotency-Key"?: components["parameters"]["idempotencyKey"];
+            };
             path?: never;
             cookie?: never;
         };
@@ -2169,6 +3002,7 @@ export interface operations {
             /** @description Checkout created successfully */
             201: {
                 headers: {
+                    "Idempotent-Replayed": components["headers"]["IdempotentReplayed"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -2176,6 +3010,7 @@ export interface operations {
                      * @example {
                      *       "id": "checkout_Bm7xNvPwKr3YjTgHcZaE",
                      *       "resource": "checkout",
+                     *       "customerId": null,
                      *       "orderId": null,
                      *       "testmode": false,
                      *       "redirectUrlSuccess": "https://example.com/success",
@@ -2204,7 +3039,21 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
-            422: components["responses"]["ValidationFailed"];
+            409: components["responses"]["Conflict"];
+            /**
+             * @description Unprocessable Entity - The request was well-formed but contained validation errors.
+             *     This includes the case where a referenced resource (e.g. `customerId`) exists but
+             *     was created in a different mode — switch between live/test API tokens to access it.
+             */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError"];
+                };
+            };
+            default: components["responses"]["UnexpectedError"];
         };
     };
     getCheckout: {
@@ -2232,9 +3081,10 @@ export interface operations {
                      * @example {
                      *       "id": "checkout_QdEpFhdSrG4Y3DnfsdqsH",
                      *       "resource": "checkout",
+                     *       "customerId": "customer_7kBmRtPvXw2NjLhYcZaE",
                      *       "orderId": "order_Jk4pQrSvWm8NjLhYbUcP",
                      *       "testmode": false,
-                     *       "redirectUrlSuccess": "https://example.com/success",
+                     *       "redirectUrlSuccess": "https://example.com/return?checkout_id=checkout_QdEpFhdSrG4Y3DnfsdqsH",
                      *       "redirectUrlCanceled": "https://example.com/canceled",
                      *       "metadata": {
                      *         "campaign": "summer-sale"
@@ -2264,6 +3114,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            default: components["responses"]["UnexpectedError"];
         };
     };
     listCustomers: {
@@ -2360,12 +3211,30 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             422: components["responses"]["ValidationFailed"];
+            default: components["responses"]["UnexpectedError"];
         };
     };
     createCustomer: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /**
+                 * @description A unique key the client generates per logical mutating operation to
+                 *     make retries safe. Vatly stores the first response keyed by
+                 *     `(token, endpoint, key)` and returns it verbatim on subsequent
+                 *     requests with the same key, setting `Idempotent-Replayed: true` on
+                 *     the replayed response.
+                 *
+                 *     Replaying with a different request body or different query
+                 *     parameters returns `409 Conflict`. Keys are scoped per endpoint and
+                 *     retained for 24 hours.
+                 *
+                 *     Recommended format: UUIDv4. Send on every mutating request
+                 *     (POST, PATCH, PUT, DELETE) where retry safety matters.
+                 * @example 9f6a3b1c-7e2d-4f7b-9c5a-2c1d5b7e9f3a
+                 */
+                "Idempotency-Key"?: components["parameters"]["idempotencyKey"];
+            };
             path?: never;
             cookie?: never;
         };
@@ -2386,6 +3255,7 @@ export interface operations {
             /** @description Customer created successfully */
             201: {
                 headers: {
+                    "Idempotent-Replayed": components["headers"]["IdempotentReplayed"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -2412,7 +3282,9 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationFailed"];
+            default: components["responses"]["UnexpectedError"];
         };
     };
     getCustomer: {
@@ -2460,6 +3332,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            default: components["responses"]["UnexpectedError"];
         };
     };
     listCustomerSubscriptions: {
@@ -2510,6 +3383,7 @@ export interface operations {
                      *           "id": "subscription_Lp3mNvBxKw7RjTgYcZaE",
                      *           "resource": "subscription",
                      *           "customerId": "customer_Lp3mNvBxKw7RjTgYcZaE",
+                     *           "subscriptionPlanId": "subscription_plan_Rk5pQrSvWm8NjLhYbUcP",
                      *           "testmode": false,
                      *           "name": "Pro Monthly",
                      *           "description": "Full access to all Pro features",
@@ -2529,9 +3403,13 @@ export interface operations {
                      *           "interval": "month",
                      *           "intervalCount": 1,
                      *           "status": "active",
+                     *           "mandate": {
+                     *             "method": "card",
+                     *             "maskedIdentifier": "4242"
+                     *           },
                      *           "startedAt": "2024-01-15T10:30:00Z",
                      *           "endedAt": null,
-                     *           "cancelledAt": null,
+                     *           "canceledAt": null,
                      *           "renewedAt": "2024-02-15T10:30:00Z",
                      *           "renewedUntil": "2024-03-15T10:30:00Z",
                      *           "nextRenewalAt": "2024-03-15T10:30:00Z",
@@ -2574,6 +3452,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["ValidationFailed"];
+            default: components["responses"]["UnexpectedError"];
         };
     };
     getCustomerSubscription: {
@@ -2607,6 +3486,7 @@ export interface operations {
                      *       "id": "subscription_Lp3mNvBxKw7RjTgYcZaE",
                      *       "resource": "subscription",
                      *       "customerId": "customer_Lp3mNvBxKw7RjTgYcZaE",
+                     *       "subscriptionPlanId": "subscription_plan_Rk5pQrSvWm8NjLhYbUcP",
                      *       "testmode": false,
                      *       "name": "Pro Monthly",
                      *       "description": "Full access to all Pro features",
@@ -2626,9 +3506,13 @@ export interface operations {
                      *       "interval": "month",
                      *       "intervalCount": 1,
                      *       "status": "active",
+                     *       "mandate": {
+                     *         "method": "card",
+                     *         "maskedIdentifier": "4242"
+                     *       },
                      *       "startedAt": "2024-01-15T10:30:00Z",
                      *       "endedAt": null,
-                     *       "cancelledAt": null,
+                     *       "canceledAt": null,
                      *       "renewedAt": "2024-02-15T10:30:00Z",
                      *       "renewedUntil": "2024-03-15T10:30:00Z",
                      *       "nextRenewalAt": "2024-03-15T10:30:00Z",
@@ -2651,6 +3535,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            default: components["responses"]["UnexpectedError"];
         };
     };
     listOneOffProducts: {
@@ -2736,6 +3621,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             422: components["responses"]["ValidationFailed"];
+            default: components["responses"]["UnexpectedError"];
         };
     };
     getOneOffProduct: {
@@ -2786,6 +3672,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            default: components["responses"]["UnexpectedError"];
         };
     };
     listSubscriptionPlans: {
@@ -2894,6 +3781,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             422: components["responses"]["ValidationFailed"];
+            default: components["responses"]["UnexpectedError"];
         };
     };
     getSubscriptionPlan: {
@@ -2946,6 +3834,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            default: components["responses"]["UnexpectedError"];
         };
     };
     listOrders: {
@@ -3004,6 +3893,14 @@ export interface operations {
                      *             "value": "29.00",
                      *             "currency": "EUR"
                      *           },
+                     *           "reversedSubtotal": {
+                     *             "value": "0.00",
+                     *             "currency": "EUR"
+                     *           },
+                     *           "refundableSubtotal": {
+                     *             "value": "29.00",
+                     *             "currency": "EUR"
+                     *           },
                      *           "taxSummary": [
                      *             {
                      *               "taxRate": {
@@ -3047,7 +3944,9 @@ export interface operations {
                      *                     "currency": "EUR"
                      *                   }
                      *                 }
-                     *               ]
+                     *               ],
+                     *               "productType": "subscription",
+                     *               "productId": "subscription_Hn5xWqVfKm8RjTgYbUcP"
                      *             }
                      *           ],
                      *           "customerDetails": {
@@ -3067,6 +3966,10 @@ export interface operations {
                      *             "customer": {
                      *               "href": "https://api.vatly.com/v1/customers/customer_Xk9pQrSvWm4NjLhYbUcP",
                      *               "type": "application/json"
+                     *             },
+                     *             "customerInvoice": {
+                     *               "href": "https://vatly.com/invoices/order_Hn5xWqVfKm8RjTgYbUcP",
+                     *               "type": "text/html"
                      *             }
                      *           }
                      *         }
@@ -3096,6 +3999,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             422: components["responses"]["ValidationFailed"];
+            default: components["responses"]["UnexpectedError"];
         };
     };
     getOrder: {
@@ -3135,6 +4039,14 @@ export interface operations {
                      *         "currency": "EUR"
                      *       },
                      *       "subtotal": {
+                     *         "value": "29.00",
+                     *         "currency": "EUR"
+                     *       },
+                     *       "reversedSubtotal": {
+                     *         "value": "0.00",
+                     *         "currency": "EUR"
+                     *       },
+                     *       "refundableSubtotal": {
                      *         "value": "29.00",
                      *         "currency": "EUR"
                      *       },
@@ -3181,7 +4093,9 @@ export interface operations {
                      *                 "currency": "EUR"
                      *               }
                      *             }
-                     *           ]
+                     *           ],
+                     *           "productType": "subscription",
+                     *           "productId": "subscription_Hn5xWqVfKm8RjTgYbUcP"
                      *         }
                      *       ],
                      *       "customerDetails": {
@@ -3201,6 +4115,10 @@ export interface operations {
                      *         "customer": {
                      *           "href": "https://api.vatly.com/v1/customers/customer_Xk9pQrSvWm4NjLhYbUcP",
                      *           "type": "application/json"
+                     *         },
+                     *         "customerInvoice": {
+                     *           "href": "https://vatly.com/invoices/order_Hn5xWqVfKm8RjTgYbUcP",
+                     *           "type": "text/html"
                      *         }
                      *       }
                      *     }
@@ -3211,12 +4129,30 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            default: components["responses"]["UnexpectedError"];
         };
     };
-    requestOrderAddressUpdateLink: {
+    createOrderInvoiceUpdateLink: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /**
+                 * @description A unique key the client generates per logical mutating operation to
+                 *     make retries safe. Vatly stores the first response keyed by
+                 *     `(token, endpoint, key)` and returns it verbatim on subsequent
+                 *     requests with the same key, setting `Idempotent-Replayed: true` on
+                 *     the replayed response.
+                 *
+                 *     Replaying with a different request body or different query
+                 *     parameters returns `409 Conflict`. Keys are scoped per endpoint and
+                 *     retained for 24 hours.
+                 *
+                 *     Recommended format: UUIDv4. Send on every mutating request
+                 *     (POST, PATCH, PUT, DELETE) where retry safety matters.
+                 * @example 9f6a3b1c-7e2d-4f7b-9c5a-2c1d5b7e9f3a
+                 */
+                "Idempotency-Key"?: components["parameters"]["idempotencyKey"];
+            };
             path: {
                 /**
                  * @description Unique identifier of the order
@@ -3228,9 +4164,10 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Address update link generated */
+            /** @description Invoice update link generated */
             200: {
                 headers: {
+                    "Idempotent-Replayed": components["headers"]["IdempotentReplayed"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -3240,12 +4177,14 @@ export interface operations {
                      *       "type": "text/html"
                      *     }
                      */
-                    "application/json": components["schemas"]["AddressUpdateLink"];
+                    "application/json": components["schemas"]["InvoiceUpdateLink"];
                 };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            default: components["responses"]["UnexpectedError"];
         };
     };
     listOrderRefunds: {
@@ -3394,12 +4333,30 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["ValidationFailed"];
+            default: components["responses"]["UnexpectedError"];
         };
     };
     createOrderRefund: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /**
+                 * @description A unique key the client generates per logical mutating operation to
+                 *     make retries safe. Vatly stores the first response keyed by
+                 *     `(token, endpoint, key)` and returns it verbatim on subsequent
+                 *     requests with the same key, setting `Idempotent-Replayed: true` on
+                 *     the replayed response.
+                 *
+                 *     Replaying with a different request body or different query
+                 *     parameters returns `409 Conflict`. Keys are scoped per endpoint and
+                 *     retained for 24 hours.
+                 *
+                 *     Recommended format: UUIDv4. Send on every mutating request
+                 *     (POST, PATCH, PUT, DELETE) where retry safety matters.
+                 * @example 9f6a3b1c-7e2d-4f7b-9c5a-2c1d5b7e9f3a
+                 */
+                "Idempotency-Key"?: components["parameters"]["idempotencyKey"];
+            };
             path: {
                 /**
                  * @description Unique identifier of the order
@@ -3418,6 +4375,7 @@ export interface operations {
             /** @description Refund created successfully */
             201: {
                 headers: {
+                    "Idempotent-Replayed": components["headers"]["IdempotentReplayed"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -3504,6 +4462,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             /**
              * @description Validation failed. Common errors:
              *     - Order is not in `paid` status
@@ -3518,12 +4477,30 @@ export interface operations {
                     "application/json": components["schemas"]["ValidationError"];
                 };
             };
+            default: components["responses"]["UnexpectedError"];
         };
     };
     createFullOrderRefund: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /**
+                 * @description A unique key the client generates per logical mutating operation to
+                 *     make retries safe. Vatly stores the first response keyed by
+                 *     `(token, endpoint, key)` and returns it verbatim on subsequent
+                 *     requests with the same key, setting `Idempotent-Replayed: true` on
+                 *     the replayed response.
+                 *
+                 *     Replaying with a different request body or different query
+                 *     parameters returns `409 Conflict`. Keys are scoped per endpoint and
+                 *     retained for 24 hours.
+                 *
+                 *     Recommended format: UUIDv4. Send on every mutating request
+                 *     (POST, PATCH, PUT, DELETE) where retry safety matters.
+                 * @example 9f6a3b1c-7e2d-4f7b-9c5a-2c1d5b7e9f3a
+                 */
+                "Idempotency-Key"?: components["parameters"]["idempotencyKey"];
+            };
             path: {
                 /**
                  * @description Unique identifier of the order
@@ -3549,6 +4526,7 @@ export interface operations {
             /** @description Full refund created successfully */
             201: {
                 headers: {
+                    "Idempotent-Replayed": components["headers"]["IdempotentReplayed"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -3635,7 +4613,9 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationFailed"];
+            default: components["responses"]["UnexpectedError"];
         };
     };
     getOrderRefund: {
@@ -3750,12 +4730,30 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            default: components["responses"]["UnexpectedError"];
         };
     };
     cancelOrderRefund: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /**
+                 * @description A unique key the client generates per logical mutating operation to
+                 *     make retries safe. Vatly stores the first response keyed by
+                 *     `(token, endpoint, key)` and returns it verbatim on subsequent
+                 *     requests with the same key, setting `Idempotent-Replayed: true` on
+                 *     the replayed response.
+                 *
+                 *     Replaying with a different request body or different query
+                 *     parameters returns `409 Conflict`. Keys are scoped per endpoint and
+                 *     retained for 24 hours.
+                 *
+                 *     Recommended format: UUIDv4. Send on every mutating request
+                 *     (POST, PATCH, PUT, DELETE) where retry safety matters.
+                 * @example 9f6a3b1c-7e2d-4f7b-9c5a-2c1d5b7e9f3a
+                 */
+                "Idempotency-Key"?: components["parameters"]["idempotencyKey"];
+            };
             path: {
                 /**
                  * @description Unique identifier of the order
@@ -3775,6 +4773,7 @@ export interface operations {
             /** @description Refund canceled successfully */
             204: {
                 headers: {
+                    "Idempotent-Replayed": components["headers"]["IdempotentReplayed"];
                     [name: string]: unknown;
                 };
                 content?: never;
@@ -3782,6 +4781,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             /** @description Cannot cancel refund (not in pending status) */
             422: {
                 headers: {
@@ -3796,6 +4796,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            default: components["responses"]["UnexpectedError"];
         };
     };
     listOrderChargebacks: {
@@ -3855,6 +4856,29 @@ export interface operations {
                      *             "value": "35.09",
                      *             "currency": "EUR"
                      *           },
+                     *           "customerId": "customer_Lp3mNvBxKw7RjTgYcZaE",
+                     *           "status": "lost",
+                     *           "total": {
+                     *             "value": "35.09",
+                     *             "currency": "EUR"
+                     *           },
+                     *           "subtotal": {
+                     *             "value": "29.00",
+                     *             "currency": "EUR"
+                     *           },
+                     *           "taxSummary": [
+                     *             {
+                     *               "taxRate": {
+                     *                 "name": "VAT",
+                     *                 "percentage": 21,
+                     *                 "taxablePercentage": 100
+                     *               },
+                     *               "amount": {
+                     *                 "value": "6.09",
+                     *                 "currency": "EUR"
+                     *               }
+                     *             }
+                     *           ],
                      *           "reason": "product_not_received",
                      *           "originalOrderId": "order_Fp2kQrSvWm8NjLhYbUcP",
                      *           "orderId": "order_Rk5pQrSvWm8NjLhYbUcP",
@@ -3900,6 +4924,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["ValidationFailed"];
+            default: components["responses"]["UnexpectedError"];
         };
     };
     getOrderChargeback: {
@@ -3942,6 +4967,29 @@ export interface operations {
                      *         "value": "35.09",
                      *         "currency": "EUR"
                      *       },
+                     *       "customerId": "customer_Lp3mNvBxKw7RjTgYcZaE",
+                     *       "status": "lost",
+                     *       "total": {
+                     *         "value": "35.09",
+                     *         "currency": "EUR"
+                     *       },
+                     *       "subtotal": {
+                     *         "value": "29.00",
+                     *         "currency": "EUR"
+                     *       },
+                     *       "taxSummary": [
+                     *         {
+                     *           "taxRate": {
+                     *             "name": "VAT",
+                     *             "percentage": 21,
+                     *             "taxablePercentage": 100
+                     *           },
+                     *           "amount": {
+                     *             "value": "6.09",
+                     *             "currency": "EUR"
+                     *           }
+                     *         }
+                     *       ],
                      *       "reason": "fraud",
                      *       "originalOrderId": "order_Fp2kQrSvWm8NjLhYbUcP",
                      *       "orderId": "order_Rk5pQrSvWm8NjLhYbUcP",
@@ -3967,6 +5015,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            default: components["responses"]["UnexpectedError"];
         };
     };
     listRefunds: {
@@ -4111,6 +5160,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             422: components["responses"]["ValidationFailed"];
+            default: components["responses"]["UnexpectedError"];
         };
     };
     getRefund: {
@@ -4220,6 +5270,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            default: components["responses"]["UnexpectedError"];
         };
     };
     listChargebacks: {
@@ -4273,6 +5324,29 @@ export interface operations {
                      *             "value": "35.09",
                      *             "currency": "EUR"
                      *           },
+                     *           "customerId": "customer_Lp3mNvBxKw7RjTgYcZaE",
+                     *           "status": "lost",
+                     *           "total": {
+                     *             "value": "35.09",
+                     *             "currency": "EUR"
+                     *           },
+                     *           "subtotal": {
+                     *             "value": "29.00",
+                     *             "currency": "EUR"
+                     *           },
+                     *           "taxSummary": [
+                     *             {
+                     *               "taxRate": {
+                     *                 "name": "VAT",
+                     *                 "percentage": 21,
+                     *                 "taxablePercentage": 100
+                     *               },
+                     *               "amount": {
+                     *                 "value": "6.09",
+                     *                 "currency": "EUR"
+                     *               }
+                     *             }
+                     *           ],
                      *           "reason": "fraud",
                      *           "originalOrderId": "order_Fp2kQrSvWm8NjLhYbUcP",
                      *           "orderId": "order_Rk5pQrSvWm8NjLhYbUcP",
@@ -4317,6 +5391,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             422: components["responses"]["ValidationFailed"];
+            default: components["responses"]["UnexpectedError"];
         };
     };
     getChargeback: {
@@ -4354,6 +5429,29 @@ export interface operations {
                      *         "value": "35.09",
                      *         "currency": "EUR"
                      *       },
+                     *       "customerId": "customer_Lp3mNvBxKw7RjTgYcZaE",
+                     *       "status": "lost",
+                     *       "total": {
+                     *         "value": "35.09",
+                     *         "currency": "EUR"
+                     *       },
+                     *       "subtotal": {
+                     *         "value": "29.00",
+                     *         "currency": "EUR"
+                     *       },
+                     *       "taxSummary": [
+                     *         {
+                     *           "taxRate": {
+                     *             "name": "VAT",
+                     *             "percentage": 21,
+                     *             "taxablePercentage": 100
+                     *           },
+                     *           "amount": {
+                     *             "value": "6.09",
+                     *             "currency": "EUR"
+                     *           }
+                     *         }
+                     *       ],
                      *       "reason": "fraud",
                      *       "originalOrderId": "order_Fp2kQrSvWm8NjLhYbUcP",
                      *       "orderId": "order_Rk5pQrSvWm8NjLhYbUcP",
@@ -4379,6 +5477,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            default: components["responses"]["UnexpectedError"];
         };
     };
     getWebhookEvent: {
@@ -4412,8 +5511,13 @@ export interface operations {
                      *       "object": {
                      *         "id": "order_Hn5xWqVfKm8RjTgYbUcP",
                      *         "resource": "order",
+                     *         "customerId": "customer_Xk9pQrSvWm4NjLhYbUcP",
                      *         "testmode": false,
+                     *         "metadata": {},
+                     *         "paymentMethod": "ideal",
+                     *         "createdAt": "2026-05-21T14:32:08+00:00",
                      *         "status": "paid",
+                     *         "invoiceNumber": "INV-2026-0001",
                      *         "total": {
                      *           "value": "29.99",
                      *           "currency": "EUR"
@@ -4421,8 +5525,89 @@ export interface operations {
                      *         "subtotal": {
                      *           "value": "24.79",
                      *           "currency": "EUR"
+                     *         },
+                     *         "reversedSubtotal": {
+                     *           "value": "0.00",
+                     *           "currency": "EUR"
+                     *         },
+                     *         "refundableSubtotal": {
+                     *           "value": "24.79",
+                     *           "currency": "EUR"
+                     *         },
+                     *         "taxSummary": [
+                     *           {
+                     *             "taxRate": {
+                     *               "name": "VAT",
+                     *               "percentage": 21,
+                     *               "taxablePercentage": 100
+                     *             },
+                     *             "amount": {
+                     *               "value": "5.20",
+                     *               "currency": "EUR"
+                     *             }
+                     *           }
+                     *         ],
+                     *         "lines": [
+                     *           {
+                     *             "id": "order_item_Mn6xBtPvKw2RjTgYcZaE",
+                     *             "resource": "orderline",
+                     *             "description": "Pro Monthly Subscription",
+                     *             "quantity": 1,
+                     *             "basePrice": {
+                     *               "value": "24.79",
+                     *               "currency": "EUR"
+                     *             },
+                     *             "total": {
+                     *               "value": "29.99",
+                     *               "currency": "EUR"
+                     *             },
+                     *             "subtotal": {
+                     *               "value": "24.79",
+                     *               "currency": "EUR"
+                     *             },
+                     *             "taxes": [
+                     *               {
+                     *                 "taxRate": {
+                     *                   "name": "VAT",
+                     *                   "percentage": 21,
+                     *                   "taxablePercentage": 100
+                     *                 },
+                     *                 "amount": {
+                     *                   "value": "5.20",
+                     *                   "currency": "EUR"
+                     *                 }
+                     *               }
+                     *             ],
+                     *             "productType": "subscription",
+                     *             "productId": "subscription_Hn5xWqVfKm8RjTgYbUcP"
+                     *           }
+                     *         ],
+                     *         "customerDetails": {
+                     *           "fullName": "John Doe",
+                     *           "companyName": "Acme Corp",
+                     *           "streetAndNumber": "123 Main Street",
+                     *           "city": "Berlin",
+                     *           "postalCode": "10115",
+                     *           "country": "DE",
+                     *           "email": "john@acme.com"
+                     *         },
+                     *         "links": {
+                     *           "self": {
+                     *             "href": "https://api.vatly.com/v1/orders/order_Hn5xWqVfKm8RjTgYbUcP",
+                     *             "type": "application/json"
+                     *           },
+                     *           "customer": {
+                     *             "href": "https://api.vatly.com/v1/customers/customer_Xk9pQrSvWm4NjLhYbUcP",
+                     *             "type": "application/json"
+                     *           },
+                     *           "customerInvoice": {
+                     *             "href": "https://vatly.com/invoices/order_Hn5xWqVfKm8RjTgYbUcP",
+                     *             "type": "text/html"
+                     *           }
                      *         }
                      *       },
+                     *       "createdAt": "2026-05-21T14:32:08+00:00",
+                     *       "testmode": false,
                      *       "links": {
                      *         "self": {
                      *           "href": "https://api.vatly.com/v1/webhook-events/webhook_event_Qk8pRtSvWm2NjLhYcZaE",
@@ -4437,6 +5622,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            default: components["responses"]["UnexpectedError"];
         };
     };
     listSubscriptions: {
@@ -4481,6 +5667,7 @@ export interface operations {
                      *           "id": "subscription_Lp3mNvBxKw7RjTgYcZaE",
                      *           "resource": "subscription",
                      *           "customerId": "customer_Lp3mNvBxKw7RjTgYcZaE",
+                     *           "subscriptionPlanId": "subscription_plan_Rk5pQrSvWm8NjLhYbUcP",
                      *           "testmode": false,
                      *           "name": "Pro Monthly",
                      *           "description": "Full access to all Pro features",
@@ -4500,9 +5687,13 @@ export interface operations {
                      *           "interval": "month",
                      *           "intervalCount": 1,
                      *           "status": "active",
+                     *           "mandate": {
+                     *             "method": "card",
+                     *             "maskedIdentifier": "4242"
+                     *           },
                      *           "startedAt": "2024-01-15T10:30:00Z",
                      *           "endedAt": null,
-                     *           "cancelledAt": null,
+                     *           "canceledAt": null,
                      *           "renewedAt": "2024-02-15T10:30:00Z",
                      *           "renewedUntil": "2024-03-15T10:30:00Z",
                      *           "nextRenewalAt": "2024-03-15T10:30:00Z",
@@ -4522,6 +5713,7 @@ export interface operations {
                      *           "id": "subscription_Wt5mNvBxKw7YcZaEjLhR",
                      *           "resource": "subscription",
                      *           "customerId": "customer_Mn6xBtPvKw2RjTgYcZaE",
+                     *           "subscriptionPlanId": "subscription_plan_Wt5mNvBxKw7YcZaEjLhR",
                      *           "testmode": false,
                      *           "name": "Enterprise Yearly",
                      *           "description": "Enterprise features with priority support",
@@ -4542,9 +5734,13 @@ export interface operations {
                      *           "interval": "year",
                      *           "intervalCount": 1,
                      *           "status": "active",
+                     *           "mandate": {
+                     *             "method": "card",
+                     *             "maskedIdentifier": "4242"
+                     *           },
                      *           "startedAt": "2024-01-01T00:00:00Z",
                      *           "endedAt": null,
-                     *           "cancelledAt": null,
+                     *           "canceledAt": null,
                      *           "renewedAt": "2024-01-01T00:00:00Z",
                      *           "renewedUntil": "2025-01-01T00:00:00Z",
                      *           "nextRenewalAt": "2025-01-01T00:00:00Z",
@@ -4586,6 +5782,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             422: components["responses"]["ValidationFailed"];
+            default: components["responses"]["UnexpectedError"];
         };
     };
     getSubscription: {
@@ -4614,6 +5811,7 @@ export interface operations {
                      *       "id": "subscription_Lp3mNvBxKw7RjTgYcZaE",
                      *       "resource": "subscription",
                      *       "customerId": "customer_Lp3mNvBxKw7RjTgYcZaE",
+                     *       "subscriptionPlanId": "subscription_plan_Rk5pQrSvWm8NjLhYbUcP",
                      *       "testmode": false,
                      *       "name": "Pro Monthly",
                      *       "description": "Full access to all Pro features",
@@ -4633,9 +5831,13 @@ export interface operations {
                      *       "interval": "month",
                      *       "intervalCount": 1,
                      *       "status": "active",
+                     *       "mandate": {
+                     *         "method": "card",
+                     *         "maskedIdentifier": "4242"
+                     *       },
                      *       "startedAt": "2024-01-15T10:30:00Z",
                      *       "endedAt": null,
-                     *       "cancelledAt": null,
+                     *       "canceledAt": null,
                      *       "renewedAt": "2024-02-15T10:30:00Z",
                      *       "renewedUntil": "2024-03-15T10:30:00Z",
                      *       "nextRenewalAt": "2024-03-15T10:30:00Z",
@@ -4658,6 +5860,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            default: components["responses"]["UnexpectedError"];
         };
     };
     cancelSubscription: {
@@ -4670,7 +5873,24 @@ export interface operations {
                  */
                 immediately?: boolean;
             };
-            header?: never;
+            header?: {
+                /**
+                 * @description A unique key the client generates per logical mutating operation to
+                 *     make retries safe. Vatly stores the first response keyed by
+                 *     `(token, endpoint, key)` and returns it verbatim on subsequent
+                 *     requests with the same key, setting `Idempotent-Replayed: true` on
+                 *     the replayed response.
+                 *
+                 *     Replaying with a different request body or different query
+                 *     parameters returns `409 Conflict`. Keys are scoped per endpoint and
+                 *     retained for 24 hours.
+                 *
+                 *     Recommended format: UUIDv4. Send on every mutating request
+                 *     (POST, PATCH, PUT, DELETE) where retry safety matters.
+                 * @example 9f6a3b1c-7e2d-4f7b-9c5a-2c1d5b7e9f3a
+                 */
+                "Idempotency-Key"?: components["parameters"]["idempotencyKey"];
+            };
             path: {
                 /**
                  * @description Unique identifier of the subscription
@@ -4685,6 +5905,7 @@ export interface operations {
             /** @description Subscription canceled successfully */
             204: {
                 headers: {
+                    "Idempotent-Replayed": components["headers"]["IdempotentReplayed"];
                     [name: string]: unknown;
                 };
                 content?: never;
@@ -4692,6 +5913,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             /** @description Subscription cannot be canceled (already canceled or ended) */
             422: {
                 headers: {
@@ -4701,12 +5923,30 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            default: components["responses"]["UnexpectedError"];
         };
     };
     updateSubscription: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /**
+                 * @description A unique key the client generates per logical mutating operation to
+                 *     make retries safe. Vatly stores the first response keyed by
+                 *     `(token, endpoint, key)` and returns it verbatim on subsequent
+                 *     requests with the same key, setting `Idempotent-Replayed: true` on
+                 *     the replayed response.
+                 *
+                 *     Replaying with a different request body or different query
+                 *     parameters returns `409 Conflict`. Keys are scoped per endpoint and
+                 *     retained for 24 hours.
+                 *
+                 *     Recommended format: UUIDv4. Send on every mutating request
+                 *     (POST, PATCH, PUT, DELETE) where retry safety matters.
+                 * @example 9f6a3b1c-7e2d-4f7b-9c5a-2c1d5b7e9f3a
+                 */
+                "Idempotency-Key"?: components["parameters"]["idempotencyKey"];
+            };
             path: {
                 /**
                  * @description Unique identifier of the subscription
@@ -4725,6 +5965,7 @@ export interface operations {
             /** @description Subscription updated successfully */
             200: {
                 headers: {
+                    "Idempotent-Replayed": components["headers"]["IdempotentReplayed"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4733,6 +5974,7 @@ export interface operations {
                      *       "id": "subscription_Lp3mNvBxKw7RjTgYcZaE",
                      *       "resource": "subscription",
                      *       "customerId": "customer_Lp3mNvBxKw7RjTgYcZaE",
+                     *       "subscriptionPlanId": "subscription_plan_Wt5mNvBxKw7YcZaEjLhR",
                      *       "testmode": false,
                      *       "name": "Pro Yearly",
                      *       "description": "Full access to all Pro features, billed yearly",
@@ -4752,9 +5994,13 @@ export interface operations {
                      *       "interval": "year",
                      *       "intervalCount": 1,
                      *       "status": "active",
+                     *       "mandate": {
+                     *         "method": "card",
+                     *         "maskedIdentifier": "4242"
+                     *       },
                      *       "startedAt": "2024-01-15T10:30:00Z",
                      *       "endedAt": null,
-                     *       "cancelledAt": null,
+                     *       "canceledAt": null,
                      *       "renewedAt": "2024-02-15T10:30:00Z",
                      *       "renewedUntil": "2025-02-15T10:30:00Z",
                      *       "nextRenewalAt": "2025-02-15T10:30:00Z",
@@ -4777,6 +6023,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             /**
              * @description Validation failed. Common errors:
              *     - Neither subscriptionPlanId nor quantity provided
@@ -4791,12 +6038,30 @@ export interface operations {
                     "application/json": components["schemas"]["ValidationError"];
                 };
             };
+            default: components["responses"]["UnexpectedError"];
         };
     };
-    updateSubscriptionBilling: {
+    createSubscriptionBillingUpdateLink: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /**
+                 * @description A unique key the client generates per logical mutating operation to
+                 *     make retries safe. Vatly stores the first response keyed by
+                 *     `(token, endpoint, key)` and returns it verbatim on subsequent
+                 *     requests with the same key, setting `Idempotent-Replayed: true` on
+                 *     the replayed response.
+                 *
+                 *     Replaying with a different request body or different query
+                 *     parameters returns `409 Conflict`. Keys are scoped per endpoint and
+                 *     retained for 24 hours.
+                 *
+                 *     Recommended format: UUIDv4. Send on every mutating request
+                 *     (POST, PATCH, PUT, DELETE) where retry safety matters.
+                 * @example 9f6a3b1c-7e2d-4f7b-9c5a-2c1d5b7e9f3a
+                 */
+                "Idempotency-Key"?: components["parameters"]["idempotencyKey"];
+            };
             path: {
                 /**
                  * @description Unique identifier of the subscription
@@ -4822,9 +6087,10 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Billing update flow initiated */
+            /** @description Billing update link generated */
             200: {
                 headers: {
+                    "Idempotent-Replayed": components["headers"]["IdempotentReplayed"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4846,13 +6112,143 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationFailed"];
+            default: components["responses"]["UnexpectedError"];
+        };
+    };
+    resumeSubscription: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description A unique key the client generates per logical mutating operation to
+                 *     make retries safe. Vatly stores the first response keyed by
+                 *     `(token, endpoint, key)` and returns it verbatim on subsequent
+                 *     requests with the same key, setting `Idempotent-Replayed: true` on
+                 *     the replayed response.
+                 *
+                 *     Replaying with a different request body or different query
+                 *     parameters returns `409 Conflict`. Keys are scoped per endpoint and
+                 *     retained for 24 hours.
+                 *
+                 *     Recommended format: UUIDv4. Send on every mutating request
+                 *     (POST, PATCH, PUT, DELETE) where retry safety matters.
+                 * @example 9f6a3b1c-7e2d-4f7b-9c5a-2c1d5b7e9f3a
+                 */
+                "Idempotency-Key"?: components["parameters"]["idempotencyKey"];
+            };
+            path: {
+                /**
+                 * @description Unique identifier of the subscription
+                 * @example subscription_Lp3mNvBxKw7RjTgYcZaE
+                 */
+                subscriptionId: components["parameters"]["subscriptionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Subscription resumed successfully */
+            200: {
+                headers: {
+                    "Idempotent-Replayed": components["headers"]["IdempotentReplayed"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "id": "subscription_Lp3mNvBxKw7RjTgYcZaE",
+                     *       "resource": "subscription",
+                     *       "customerId": "customer_Lp3mNvBxKw7RjTgYcZaE",
+                     *       "subscriptionPlanId": "subscription_plan_Rk5pQrSvWm8NjLhYbUcP",
+                     *       "testmode": false,
+                     *       "name": "Pro Monthly",
+                     *       "description": "Full access to all Pro features",
+                     *       "billingAddress": {
+                     *         "fullName": "John Doe",
+                     *         "companyName": "Acme Corp",
+                     *         "streetAndNumber": "123 Main Street",
+                     *         "city": "Berlin",
+                     *         "postalCode": "10115",
+                     *         "country": "DE"
+                     *       },
+                     *       "basePrice": {
+                     *         "value": "29.00",
+                     *         "currency": "EUR"
+                     *       },
+                     *       "quantity": 1,
+                     *       "interval": "month",
+                     *       "intervalCount": 1,
+                     *       "status": "active",
+                     *       "mandate": {
+                     *         "method": "card",
+                     *         "maskedIdentifier": "4242"
+                     *       },
+                     *       "startedAt": "2024-01-15T10:30:00Z",
+                     *       "endedAt": null,
+                     *       "canceledAt": null,
+                     *       "renewedAt": "2024-02-15T10:30:00Z",
+                     *       "renewedUntil": "2024-03-15T10:30:00Z",
+                     *       "nextRenewalAt": "2024-03-15T10:30:00Z",
+                     *       "trialUntil": null,
+                     *       "links": {
+                     *         "self": {
+                     *           "href": "https://api.vatly.com/v1/subscriptions/subscription_Lp3mNvBxKw7RjTgYcZaE",
+                     *           "type": "application/json"
+                     *         },
+                     *         "customer": {
+                     *           "href": "https://api.vatly.com/v1/customers/customer_Lp3mNvBxKw7RjTgYcZaE",
+                     *           "type": "application/json"
+                     *         }
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Subscription"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            /**
+             * @description Subscription is not within an active grace period. Common causes:
+             *     - Subscription was canceled immediately (status `canceled`)
+             *     - Grace period has already lapsed (`status` is now `canceled`)
+             *     - Subscription is already active (was not canceled, or already resumed)
+             */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError"];
+                };
+            };
+            default: components["responses"]["UnexpectedError"];
         };
     };
     fastForwardSubscriptionRenewal: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /**
+                 * @description A unique key the client generates per logical mutating operation to
+                 *     make retries safe. Vatly stores the first response keyed by
+                 *     `(token, endpoint, key)` and returns it verbatim on subsequent
+                 *     requests with the same key, setting `Idempotent-Replayed: true` on
+                 *     the replayed response.
+                 *
+                 *     Replaying with a different request body or different query
+                 *     parameters returns `409 Conflict`. Keys are scoped per endpoint and
+                 *     retained for 24 hours.
+                 *
+                 *     Recommended format: UUIDv4. Send on every mutating request
+                 *     (POST, PATCH, PUT, DELETE) where retry safety matters.
+                 * @example 9f6a3b1c-7e2d-4f7b-9c5a-2c1d5b7e9f3a
+                 */
+                "Idempotency-Key"?: components["parameters"]["idempotencyKey"];
+            };
             path: {
                 /**
                  * @description Unique identifier of the subscription
@@ -4867,6 +6263,7 @@ export interface operations {
             /** @description Subscription renewed successfully */
             200: {
                 headers: {
+                    "Idempotent-Replayed": components["headers"]["IdempotentReplayed"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4875,6 +6272,7 @@ export interface operations {
                      *       "id": "subscription_Lp3mNvBxKw7RjTgYcZaE",
                      *       "resource": "subscription",
                      *       "customerId": "customer_Lp3mNvBxKw7RjTgYcZaE",
+                     *       "subscriptionPlanId": "subscription_plan_Rk5pQrSvWm8NjLhYbUcP",
                      *       "testmode": true,
                      *       "name": "Pro Monthly",
                      *       "description": "Full access to all Pro features",
@@ -4894,9 +6292,13 @@ export interface operations {
                      *       "interval": "month",
                      *       "intervalCount": 1,
                      *       "status": "active",
+                     *       "mandate": {
+                     *         "method": "card",
+                     *         "maskedIdentifier": "4242"
+                     *       },
                      *       "startedAt": "2024-01-15T10:30:00Z",
                      *       "endedAt": null,
-                     *       "cancelledAt": null,
+                     *       "canceledAt": null,
                      *       "renewedAt": "2024-03-15T10:30:00Z",
                      *       "renewedUntil": "2024-04-15T10:30:00Z",
                      *       "nextRenewalAt": "2024-04-15T10:30:00Z",
@@ -4919,12 +6321,31 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            default: components["responses"]["UnexpectedError"];
         };
     };
     simulatePaymentFailure: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /**
+                 * @description A unique key the client generates per logical mutating operation to
+                 *     make retries safe. Vatly stores the first response keyed by
+                 *     `(token, endpoint, key)` and returns it verbatim on subsequent
+                 *     requests with the same key, setting `Idempotent-Replayed: true` on
+                 *     the replayed response.
+                 *
+                 *     Replaying with a different request body or different query
+                 *     parameters returns `409 Conflict`. Keys are scoped per endpoint and
+                 *     retained for 24 hours.
+                 *
+                 *     Recommended format: UUIDv4. Send on every mutating request
+                 *     (POST, PATCH, PUT, DELETE) where retry safety matters.
+                 * @example 9f6a3b1c-7e2d-4f7b-9c5a-2c1d5b7e9f3a
+                 */
+                "Idempotency-Key"?: components["parameters"]["idempotencyKey"];
+            };
             path: {
                 /**
                  * @description ID of the mandated payment transaction to fail
@@ -4955,6 +6376,7 @@ export interface operations {
             /** @description Payment failure simulated */
             200: {
                 headers: {
+                    "Idempotent-Replayed": components["headers"]["IdempotentReplayed"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4987,6 +6409,502 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            default: components["responses"]["UnexpectedError"];
+        };
+    };
+    onOrderPaid: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description HMAC-SHA256 signature of the raw request body, formatted `t=<unix-timestamp>,v1=<hex>`.
+                 *     Recompute it over the exact bytes received and compare before trusting the payload.
+                 *     A fresh signature is sent on every delivery attempt (initial and retries).
+                 * @example t=1716301928,v1=5f3cbe2a9d1e4c7b8a0f6d2e1c3b4a5968778695a4b3c2d1e0f9a8b7c6d5e4f3a
+                 */
+                "Vatly-Signature": components["parameters"]["VatlySignature"];
+                /**
+                 * @description Stable identifier for this event, constant across delivery retries. Use it as an
+                 *     idempotency / dedup key so a retried delivery is not processed twice.
+                 * @example webhook_event_Qk8pRtSvWm2NjLhYcZaE
+                 */
+                "Vatly-Event-Id": components["parameters"]["VatlyEventId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["WebhookDelivery"];
+        responses: {
+            "2XX": components["responses"]["Acknowledged"];
+        };
+    };
+    onOrderCanceled: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description HMAC-SHA256 signature of the raw request body, formatted `t=<unix-timestamp>,v1=<hex>`.
+                 *     Recompute it over the exact bytes received and compare before trusting the payload.
+                 *     A fresh signature is sent on every delivery attempt (initial and retries).
+                 * @example t=1716301928,v1=5f3cbe2a9d1e4c7b8a0f6d2e1c3b4a5968778695a4b3c2d1e0f9a8b7c6d5e4f3a
+                 */
+                "Vatly-Signature": components["parameters"]["VatlySignature"];
+                /**
+                 * @description Stable identifier for this event, constant across delivery retries. Use it as an
+                 *     idempotency / dedup key so a retried delivery is not processed twice.
+                 * @example webhook_event_Qk8pRtSvWm2NjLhYcZaE
+                 */
+                "Vatly-Event-Id": components["parameters"]["VatlyEventId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["WebhookDelivery"];
+        responses: {
+            "2XX": components["responses"]["Acknowledged"];
+        };
+    };
+    onOrderChargebackReceived: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description HMAC-SHA256 signature of the raw request body, formatted `t=<unix-timestamp>,v1=<hex>`.
+                 *     Recompute it over the exact bytes received and compare before trusting the payload.
+                 *     A fresh signature is sent on every delivery attempt (initial and retries).
+                 * @example t=1716301928,v1=5f3cbe2a9d1e4c7b8a0f6d2e1c3b4a5968778695a4b3c2d1e0f9a8b7c6d5e4f3a
+                 */
+                "Vatly-Signature": components["parameters"]["VatlySignature"];
+                /**
+                 * @description Stable identifier for this event, constant across delivery retries. Use it as an
+                 *     idempotency / dedup key so a retried delivery is not processed twice.
+                 * @example webhook_event_Qk8pRtSvWm2NjLhYcZaE
+                 */
+                "Vatly-Event-Id": components["parameters"]["VatlyEventId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["WebhookDelivery"];
+        responses: {
+            "2XX": components["responses"]["Acknowledged"];
+        };
+    };
+    onOrderChargebackReversed: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description HMAC-SHA256 signature of the raw request body, formatted `t=<unix-timestamp>,v1=<hex>`.
+                 *     Recompute it over the exact bytes received and compare before trusting the payload.
+                 *     A fresh signature is sent on every delivery attempt (initial and retries).
+                 * @example t=1716301928,v1=5f3cbe2a9d1e4c7b8a0f6d2e1c3b4a5968778695a4b3c2d1e0f9a8b7c6d5e4f3a
+                 */
+                "Vatly-Signature": components["parameters"]["VatlySignature"];
+                /**
+                 * @description Stable identifier for this event, constant across delivery retries. Use it as an
+                 *     idempotency / dedup key so a retried delivery is not processed twice.
+                 * @example webhook_event_Qk8pRtSvWm2NjLhYcZaE
+                 */
+                "Vatly-Event-Id": components["parameters"]["VatlyEventId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["WebhookDelivery"];
+        responses: {
+            "2XX": components["responses"]["Acknowledged"];
+        };
+    };
+    onOrderPaymentFailed: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description HMAC-SHA256 signature of the raw request body, formatted `t=<unix-timestamp>,v1=<hex>`.
+                 *     Recompute it over the exact bytes received and compare before trusting the payload.
+                 *     A fresh signature is sent on every delivery attempt (initial and retries).
+                 * @example t=1716301928,v1=5f3cbe2a9d1e4c7b8a0f6d2e1c3b4a5968778695a4b3c2d1e0f9a8b7c6d5e4f3a
+                 */
+                "Vatly-Signature": components["parameters"]["VatlySignature"];
+                /**
+                 * @description Stable identifier for this event, constant across delivery retries. Use it as an
+                 *     idempotency / dedup key so a retried delivery is not processed twice.
+                 * @example webhook_event_Qk8pRtSvWm2NjLhYcZaE
+                 */
+                "Vatly-Event-Id": components["parameters"]["VatlyEventId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["WebhookDelivery"];
+        responses: {
+            "2XX": components["responses"]["Acknowledged"];
+        };
+    };
+    onRefundCompleted: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description HMAC-SHA256 signature of the raw request body, formatted `t=<unix-timestamp>,v1=<hex>`.
+                 *     Recompute it over the exact bytes received and compare before trusting the payload.
+                 *     A fresh signature is sent on every delivery attempt (initial and retries).
+                 * @example t=1716301928,v1=5f3cbe2a9d1e4c7b8a0f6d2e1c3b4a5968778695a4b3c2d1e0f9a8b7c6d5e4f3a
+                 */
+                "Vatly-Signature": components["parameters"]["VatlySignature"];
+                /**
+                 * @description Stable identifier for this event, constant across delivery retries. Use it as an
+                 *     idempotency / dedup key so a retried delivery is not processed twice.
+                 * @example webhook_event_Qk8pRtSvWm2NjLhYcZaE
+                 */
+                "Vatly-Event-Id": components["parameters"]["VatlyEventId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["WebhookDelivery"];
+        responses: {
+            "2XX": components["responses"]["Acknowledged"];
+        };
+    };
+    onRefundFailed: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description HMAC-SHA256 signature of the raw request body, formatted `t=<unix-timestamp>,v1=<hex>`.
+                 *     Recompute it over the exact bytes received and compare before trusting the payload.
+                 *     A fresh signature is sent on every delivery attempt (initial and retries).
+                 * @example t=1716301928,v1=5f3cbe2a9d1e4c7b8a0f6d2e1c3b4a5968778695a4b3c2d1e0f9a8b7c6d5e4f3a
+                 */
+                "Vatly-Signature": components["parameters"]["VatlySignature"];
+                /**
+                 * @description Stable identifier for this event, constant across delivery retries. Use it as an
+                 *     idempotency / dedup key so a retried delivery is not processed twice.
+                 * @example webhook_event_Qk8pRtSvWm2NjLhYcZaE
+                 */
+                "Vatly-Event-Id": components["parameters"]["VatlyEventId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["WebhookDelivery"];
+        responses: {
+            "2XX": components["responses"]["Acknowledged"];
+        };
+    };
+    onRefundCanceled: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description HMAC-SHA256 signature of the raw request body, formatted `t=<unix-timestamp>,v1=<hex>`.
+                 *     Recompute it over the exact bytes received and compare before trusting the payload.
+                 *     A fresh signature is sent on every delivery attempt (initial and retries).
+                 * @example t=1716301928,v1=5f3cbe2a9d1e4c7b8a0f6d2e1c3b4a5968778695a4b3c2d1e0f9a8b7c6d5e4f3a
+                 */
+                "Vatly-Signature": components["parameters"]["VatlySignature"];
+                /**
+                 * @description Stable identifier for this event, constant across delivery retries. Use it as an
+                 *     idempotency / dedup key so a retried delivery is not processed twice.
+                 * @example webhook_event_Qk8pRtSvWm2NjLhYcZaE
+                 */
+                "Vatly-Event-Id": components["parameters"]["VatlyEventId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["WebhookDelivery"];
+        responses: {
+            "2XX": components["responses"]["Acknowledged"];
+        };
+    };
+    onSubscriptionStarted: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description HMAC-SHA256 signature of the raw request body, formatted `t=<unix-timestamp>,v1=<hex>`.
+                 *     Recompute it over the exact bytes received and compare before trusting the payload.
+                 *     A fresh signature is sent on every delivery attempt (initial and retries).
+                 * @example t=1716301928,v1=5f3cbe2a9d1e4c7b8a0f6d2e1c3b4a5968778695a4b3c2d1e0f9a8b7c6d5e4f3a
+                 */
+                "Vatly-Signature": components["parameters"]["VatlySignature"];
+                /**
+                 * @description Stable identifier for this event, constant across delivery retries. Use it as an
+                 *     idempotency / dedup key so a retried delivery is not processed twice.
+                 * @example webhook_event_Qk8pRtSvWm2NjLhYcZaE
+                 */
+                "Vatly-Event-Id": components["parameters"]["VatlyEventId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["WebhookDelivery"];
+        responses: {
+            "2XX": components["responses"]["Acknowledged"];
+        };
+    };
+    onSubscriptionCanceledImmediately: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description HMAC-SHA256 signature of the raw request body, formatted `t=<unix-timestamp>,v1=<hex>`.
+                 *     Recompute it over the exact bytes received and compare before trusting the payload.
+                 *     A fresh signature is sent on every delivery attempt (initial and retries).
+                 * @example t=1716301928,v1=5f3cbe2a9d1e4c7b8a0f6d2e1c3b4a5968778695a4b3c2d1e0f9a8b7c6d5e4f3a
+                 */
+                "Vatly-Signature": components["parameters"]["VatlySignature"];
+                /**
+                 * @description Stable identifier for this event, constant across delivery retries. Use it as an
+                 *     idempotency / dedup key so a retried delivery is not processed twice.
+                 * @example webhook_event_Qk8pRtSvWm2NjLhYcZaE
+                 */
+                "Vatly-Event-Id": components["parameters"]["VatlyEventId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["WebhookDelivery"];
+        responses: {
+            "2XX": components["responses"]["Acknowledged"];
+        };
+    };
+    onSubscriptionCanceledWithGracePeriod: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description HMAC-SHA256 signature of the raw request body, formatted `t=<unix-timestamp>,v1=<hex>`.
+                 *     Recompute it over the exact bytes received and compare before trusting the payload.
+                 *     A fresh signature is sent on every delivery attempt (initial and retries).
+                 * @example t=1716301928,v1=5f3cbe2a9d1e4c7b8a0f6d2e1c3b4a5968778695a4b3c2d1e0f9a8b7c6d5e4f3a
+                 */
+                "Vatly-Signature": components["parameters"]["VatlySignature"];
+                /**
+                 * @description Stable identifier for this event, constant across delivery retries. Use it as an
+                 *     idempotency / dedup key so a retried delivery is not processed twice.
+                 * @example webhook_event_Qk8pRtSvWm2NjLhYcZaE
+                 */
+                "Vatly-Event-Id": components["parameters"]["VatlyEventId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["WebhookDelivery"];
+        responses: {
+            "2XX": components["responses"]["Acknowledged"];
+        };
+    };
+    onSubscriptionCancellationGracePeriodCompleted: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description HMAC-SHA256 signature of the raw request body, formatted `t=<unix-timestamp>,v1=<hex>`.
+                 *     Recompute it over the exact bytes received and compare before trusting the payload.
+                 *     A fresh signature is sent on every delivery attempt (initial and retries).
+                 * @example t=1716301928,v1=5f3cbe2a9d1e4c7b8a0f6d2e1c3b4a5968778695a4b3c2d1e0f9a8b7c6d5e4f3a
+                 */
+                "Vatly-Signature": components["parameters"]["VatlySignature"];
+                /**
+                 * @description Stable identifier for this event, constant across delivery retries. Use it as an
+                 *     idempotency / dedup key so a retried delivery is not processed twice.
+                 * @example webhook_event_Qk8pRtSvWm2NjLhYcZaE
+                 */
+                "Vatly-Event-Id": components["parameters"]["VatlyEventId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["WebhookDelivery"];
+        responses: {
+            "2XX": components["responses"]["Acknowledged"];
+        };
+    };
+    onSubscriptionResumed: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description HMAC-SHA256 signature of the raw request body, formatted `t=<unix-timestamp>,v1=<hex>`.
+                 *     Recompute it over the exact bytes received and compare before trusting the payload.
+                 *     A fresh signature is sent on every delivery attempt (initial and retries).
+                 * @example t=1716301928,v1=5f3cbe2a9d1e4c7b8a0f6d2e1c3b4a5968778695a4b3c2d1e0f9a8b7c6d5e4f3a
+                 */
+                "Vatly-Signature": components["parameters"]["VatlySignature"];
+                /**
+                 * @description Stable identifier for this event, constant across delivery retries. Use it as an
+                 *     idempotency / dedup key so a retried delivery is not processed twice.
+                 * @example webhook_event_Qk8pRtSvWm2NjLhYcZaE
+                 */
+                "Vatly-Event-Id": components["parameters"]["VatlyEventId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["WebhookDelivery"];
+        responses: {
+            "2XX": components["responses"]["Acknowledged"];
+        };
+    };
+    onSubscriptionBillingUpdated: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description HMAC-SHA256 signature of the raw request body, formatted `t=<unix-timestamp>,v1=<hex>`.
+                 *     Recompute it over the exact bytes received and compare before trusting the payload.
+                 *     A fresh signature is sent on every delivery attempt (initial and retries).
+                 * @example t=1716301928,v1=5f3cbe2a9d1e4c7b8a0f6d2e1c3b4a5968778695a4b3c2d1e0f9a8b7c6d5e4f3a
+                 */
+                "Vatly-Signature": components["parameters"]["VatlySignature"];
+                /**
+                 * @description Stable identifier for this event, constant across delivery retries. Use it as an
+                 *     idempotency / dedup key so a retried delivery is not processed twice.
+                 * @example webhook_event_Qk8pRtSvWm2NjLhYcZaE
+                 */
+                "Vatly-Event-Id": components["parameters"]["VatlyEventId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["WebhookDelivery"];
+        responses: {
+            "2XX": components["responses"]["Acknowledged"];
+        };
+    };
+    onCheckoutPaid: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description HMAC-SHA256 signature of the raw request body, formatted `t=<unix-timestamp>,v1=<hex>`.
+                 *     Recompute it over the exact bytes received and compare before trusting the payload.
+                 *     A fresh signature is sent on every delivery attempt (initial and retries).
+                 * @example t=1716301928,v1=5f3cbe2a9d1e4c7b8a0f6d2e1c3b4a5968778695a4b3c2d1e0f9a8b7c6d5e4f3a
+                 */
+                "Vatly-Signature": components["parameters"]["VatlySignature"];
+                /**
+                 * @description Stable identifier for this event, constant across delivery retries. Use it as an
+                 *     idempotency / dedup key so a retried delivery is not processed twice.
+                 * @example webhook_event_Qk8pRtSvWm2NjLhYcZaE
+                 */
+                "Vatly-Event-Id": components["parameters"]["VatlyEventId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["WebhookDelivery"];
+        responses: {
+            "2XX": components["responses"]["Acknowledged"];
+        };
+    };
+    onCheckoutFailed: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description HMAC-SHA256 signature of the raw request body, formatted `t=<unix-timestamp>,v1=<hex>`.
+                 *     Recompute it over the exact bytes received and compare before trusting the payload.
+                 *     A fresh signature is sent on every delivery attempt (initial and retries).
+                 * @example t=1716301928,v1=5f3cbe2a9d1e4c7b8a0f6d2e1c3b4a5968778695a4b3c2d1e0f9a8b7c6d5e4f3a
+                 */
+                "Vatly-Signature": components["parameters"]["VatlySignature"];
+                /**
+                 * @description Stable identifier for this event, constant across delivery retries. Use it as an
+                 *     idempotency / dedup key so a retried delivery is not processed twice.
+                 * @example webhook_event_Qk8pRtSvWm2NjLhYcZaE
+                 */
+                "Vatly-Event-Id": components["parameters"]["VatlyEventId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["WebhookDelivery"];
+        responses: {
+            "2XX": components["responses"]["Acknowledged"];
+        };
+    };
+    onCheckoutCanceled: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description HMAC-SHA256 signature of the raw request body, formatted `t=<unix-timestamp>,v1=<hex>`.
+                 *     Recompute it over the exact bytes received and compare before trusting the payload.
+                 *     A fresh signature is sent on every delivery attempt (initial and retries).
+                 * @example t=1716301928,v1=5f3cbe2a9d1e4c7b8a0f6d2e1c3b4a5968778695a4b3c2d1e0f9a8b7c6d5e4f3a
+                 */
+                "Vatly-Signature": components["parameters"]["VatlySignature"];
+                /**
+                 * @description Stable identifier for this event, constant across delivery retries. Use it as an
+                 *     idempotency / dedup key so a retried delivery is not processed twice.
+                 * @example webhook_event_Qk8pRtSvWm2NjLhYcZaE
+                 */
+                "Vatly-Event-Id": components["parameters"]["VatlyEventId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["WebhookDelivery"];
+        responses: {
+            "2XX": components["responses"]["Acknowledged"];
+        };
+    };
+    onCheckoutExpired: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description HMAC-SHA256 signature of the raw request body, formatted `t=<unix-timestamp>,v1=<hex>`.
+                 *     Recompute it over the exact bytes received and compare before trusting the payload.
+                 *     A fresh signature is sent on every delivery attempt (initial and retries).
+                 * @example t=1716301928,v1=5f3cbe2a9d1e4c7b8a0f6d2e1c3b4a5968778695a4b3c2d1e0f9a8b7c6d5e4f3a
+                 */
+                "Vatly-Signature": components["parameters"]["VatlySignature"];
+                /**
+                 * @description Stable identifier for this event, constant across delivery retries. Use it as an
+                 *     idempotency / dedup key so a retried delivery is not processed twice.
+                 * @example webhook_event_Qk8pRtSvWm2NjLhYcZaE
+                 */
+                "Vatly-Event-Id": components["parameters"]["VatlyEventId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["WebhookDelivery"];
+        responses: {
+            "2XX": components["responses"]["Acknowledged"];
+        };
+    };
+    onWebhookSetup: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description HMAC-SHA256 signature of the raw request body, formatted `t=<unix-timestamp>,v1=<hex>`.
+                 *     Recompute it over the exact bytes received and compare before trusting the payload.
+                 *     A fresh signature is sent on every delivery attempt (initial and retries).
+                 * @example t=1716301928,v1=5f3cbe2a9d1e4c7b8a0f6d2e1c3b4a5968778695a4b3c2d1e0f9a8b7c6d5e4f3a
+                 */
+                "Vatly-Signature": components["parameters"]["VatlySignature"];
+                /**
+                 * @description Stable identifier for this event, constant across delivery retries. Use it as an
+                 *     idempotency / dedup key so a retried delivery is not processed twice.
+                 * @example webhook_event_Qk8pRtSvWm2NjLhYcZaE
+                 */
+                "Vatly-Event-Id": components["parameters"]["VatlyEventId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["WebhookDelivery"];
+        responses: {
+            "2XX": components["responses"]["SetupAcknowledged"];
         };
     };
 }

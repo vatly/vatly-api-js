@@ -1,10 +1,10 @@
 import type { RequestOptions } from "../http.js";
 import type { ListParams, PaginatedList } from "../pagination.js";
 import type {
-  AddressUpdateLink,
   Chargeback,
   CreateFullRefundRequest,
   CreateRefundRequest,
+  InvoiceUpdateLink,
   Order,
   Refund,
 } from "../types.js";
@@ -30,14 +30,15 @@ export class OrdersResource extends BaseResource {
   }
 
   /**
-   * POST /orders/{orderId}/request-address-update-link
-   * Returns a hosted link the customer can use to update their billing address.
+   * POST /orders/{orderId}/invoice-update-link
+   * Returns a hosted link the customer can use to update their invoice details
+   * (billing address, VAT number, company name).
    */
-  requestAddressUpdateLink(orderId: string, opts?: RequestOptions): Promise<AddressUpdateLink> {
-    return this.request<AddressUpdateLink>(
+  createInvoiceUpdateLink(orderId: string, opts?: RequestOptions): Promise<InvoiceUpdateLink> {
+    return this.request<InvoiceUpdateLink>(
       {
         method: "POST",
-        path: `/orders/${encodeURIComponent(orderId)}/request-address-update-link`,
+        path: `/orders/${encodeURIComponent(orderId)}/invoice-update-link`,
       },
       opts,
     );
