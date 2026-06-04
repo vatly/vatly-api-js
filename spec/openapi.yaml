@@ -2,6 +2,7 @@ openapi: 3.2.0
 info:
   title: Vatly API
   version: '1.0'
+  x-generated-at: '2026-05-28'
   description: |
     Vatly is a Merchant of Record billing platform for European SaaS companies.
     This API enables you to manage checkouts, customers, orders, subscriptions, refunds, and more.
@@ -62,6 +63,49 @@ info:
 
     Values are strings to preserve decimal precision.
 
+    ## Email Format
+
+    Email addresses are accepted and returned in their **Punycode (ASCII)** form
+    per [RFC 3492](https://www.rfc-editor.org/rfc/rfc3492). Internationalized
+    domains must be encoded before submission:
+
+    - Submit: `user@xn--mller-kva.de` (✓)
+    - Reject: `user@müller.de` (returns `422` with `email_domain_not_ascii`)
+
+    Responses always return the canonical ASCII form — what the caller sent in
+    is what the caller gets back. This keeps email values stable for
+    programmatic use (equality checks, deduplication, hashing) and matches
+    Mollie's own API contract.
+
+    For human-friendly display in your own UI, decode the domain back to
+    Unicode. Most languages provide this in the standard library — for
+    example, PHP's `idn_to_utf8()`, Python's `idna.decode()`, or Node's
+    [`url.domainToUnicode()`](https://nodejs.org/api/url.html#urldomaintounicodedomain).
+
+    Local-part Unicode (EAI / SMTPUTF8) is not supported.
+
+    ## Idempotency
+
+    All mutating requests (`POST`, `PATCH`, `PUT`, `DELETE`) accept an
+    optional `Idempotency-Key` header. When present, Vatly records the
+    first response keyed by `(token, endpoint, key)` and returns it
+    verbatim on subsequent requests with the same key, marking the
+    replay with an `Idempotent-Replayed: true` response header.
+
+    - **Use a fresh key per logical operation.** Generate one client-side
+      (UUIDv4 is recommended) and retry transparently with the same key
+      on network errors.
+    - **Keys are bound to the exact parameters of the first request.**
+      Replaying with a different body or different query parameters
+      returns `409 Conflict`. Either retry with the original parameters
+      or generate a new key.
+    - **Keys expire after 24 hours.** After that the key is reusable as
+      a fresh idempotency boundary.
+    - **Scope is per endpoint.** The same key value on a different
+      endpoint is treated as a new key.
+
+    Sending an `Idempotency-Key` on a `GET` or `HEAD` request is ignored.
+
     ## Errors
 
     The API returns standard HTTP status codes and JSON error responses:
@@ -72,6 +116,7 @@ info:
     | 401 | Unauthorized - Missing or invalid token |
     | 403 | Forbidden - Token invalid or insufficient permissions |
     | 404 | Not Found - Resource doesn't exist |
+    | 409 | Conflict - Idempotency-Key reused with different request parameters |
     | 422 | Unprocessable Entity - Validation failed |
     | 429 | Too Many Requests - Rate limit exceeded |
     | 500 | Internal Server Error |
@@ -155,6 +200,7 @@ paths:
                   - data
                   - count
                   - links
+                additionalProperties: false
                 properties:
                   data:
                     type: array
@@ -170,6 +216,7 @@ paths:
                 data:
                   - id: checkout_QdEpFhdSrG4Y3DnfsdqsH
                     resource: checkout
+                    customerId: null
                     orderId: null
                     testmode: false
                     redirectUrlSuccess: https://example.com/success
@@ -199,6 +246,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
     post:
       operationId: createCheckout
       summary: Create a checkout
@@ -209,7 +258,7 @@ paths:
         Checkouts expire after a configurable period (default: 24 hours).
 
         **Products:**
-        - Include one or more products using their `prod_` or `plan_` IDs
+        - Include one or more products using their `one_off_product_` or `subscription_plan_` IDs
         - Mix one-off products and subscription plans in the same checkout
         - Override prices for specific products using the `price` field
         - Add trial periods to subscription plans using `trialDays`
@@ -219,6 +268,8 @@ paths:
         - If not provided, a new customer is created based on checkout form input
       tags:
         - Checkouts
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
       requestBody:
         required: true
         content:
@@ -227,10 +278,10 @@ paths:
               $ref: '#/components/schemas/CreateCheckoutRequest'
             examples:
               oneOffProduct:
-                summary: Checkout with one-off product
+                summary: Checkout with one-off product (with {CHECKOUT_ID} placeholder)
                 value:
-                  redirectUrlSuccess: https://example.com/success
-                  redirectUrlCanceled: https://example.com/canceled
+                  redirectUrlSuccess: https://example.com/return?checkout_id={CHECKOUT_ID}
+                  redirectUrlCanceled: https://example.com/canceled?checkout_id={CHECKOUT_ID}
                   products:
                     - id: one_off_product_Vr8kQdFhSrG4Y3DnfsdqH
                       quantity: 1
@@ -259,6 +310,9 @@ paths:
       responses:
         '201':
           description: Checkout created successfully
+          headers:
+            Idempotent-Replayed:
+              $ref: '#/components/headers/IdempotentReplayed'
           content:
             application/json:
               schema:
@@ -266,6 +320,7 @@ paths:
               example:
                 id: checkout_Bm7xNvPwKr3YjTgHcZaE
                 resource: checkout
+                customerId: null
                 orderId: null
                 testmode: false
                 redirectUrlSuccess: https://example.com/success
@@ -287,8 +342,34 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '422':
-          $ref: '#/components/responses/ValidationFailed'
+          description: |
+            Unprocessable Entity - The request was well-formed but contained validation errors.
+            This includes the case where a referenced resource (e.g. `customerId`) exists but
+            was created in a different mode — switch between live/test API tokens to access it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+              examples:
+                validationFailed:
+                  summary: Field validation failed
+                  value:
+                    message: The given data was invalid.
+                    errors:
+                      products.0.id:
+                        - The selected products.0.id is invalid.
+                testmodeMismatch:
+                  summary: Referenced resource exists but in the wrong mode
+                  value:
+                    message: The given data was invalid.
+                    errors:
+                      customerId:
+                        - Customer exists, but the wrong mode is used. Try switching live / test API keys.
+        default:
+          $ref: '#/components/responses/UnexpectedError'
   /checkouts/{checkoutId}:
     get:
       operationId: getCheckout
@@ -310,9 +391,10 @@ paths:
               example:
                 id: checkout_QdEpFhdSrG4Y3DnfsdqsH
                 resource: checkout
+                customerId: customer_7kBmRtPvXw2NjLhYcZaE
                 orderId: order_Jk4pQrSvWm8NjLhYbUcP
                 testmode: false
-                redirectUrlSuccess: https://example.com/success
+                redirectUrlSuccess: https://example.com/return?checkout_id=checkout_QdEpFhdSrG4Y3DnfsdqsH
                 redirectUrlCanceled: https://example.com/canceled
                 metadata:
                   campaign: summer-sale
@@ -335,6 +417,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
   /customers:
     get:
       operationId: listCustomers
@@ -359,6 +443,7 @@ paths:
                   - data
                   - count
                   - links
+                additionalProperties: false
                 properties:
                   data:
                     type: array
@@ -406,6 +491,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
     post:
       operationId: createCustomer
       summary: Create a customer
@@ -420,6 +507,8 @@ paths:
         - Link existing users from your system to Vatly
       tags:
         - Customers
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
       requestBody:
         required: true
         content:
@@ -433,6 +522,9 @@ paths:
       responses:
         '201':
           description: Customer created successfully
+          headers:
+            Idempotent-Replayed:
+              $ref: '#/components/headers/IdempotentReplayed'
           content:
             application/json:
               schema:
@@ -453,8 +545,12 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
   /customers/{customerId}:
     get:
       operationId: getCustomer
@@ -489,6 +585,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
   /customers/{customerId}/subscriptions:
     get:
       operationId: listCustomerSubscriptions
@@ -515,6 +613,7 @@ paths:
                   - data
                   - count
                   - links
+                additionalProperties: false
                 properties:
                   data:
                     type: array
@@ -531,6 +630,7 @@ paths:
                   - id: subscription_Lp3mNvBxKw7RjTgYcZaE
                     resource: subscription
                     customerId: customer_Lp3mNvBxKw7RjTgYcZaE
+                    subscriptionPlanId: subscription_plan_Rk5pQrSvWm8NjLhYbUcP
                     testmode: false
                     name: Pro Monthly
                     description: Full access to all Pro features
@@ -548,9 +648,12 @@ paths:
                     interval: month
                     intervalCount: 1
                     status: active
+                    mandate:
+                      method: card
+                      maskedIdentifier: '4242'
                     startedAt: '2024-01-15T10:30:00Z'
                     endedAt: null
-                    cancelledAt: null
+                    canceledAt: null
                     renewedAt: '2024-02-15T10:30:00Z'
                     renewedUntil: '2024-03-15T10:30:00Z'
                     nextRenewalAt: '2024-03-15T10:30:00Z'
@@ -577,6 +680,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
   /customers/{customerId}/subscriptions/{subscriptionId}:
     get:
       operationId: getCustomerSubscription
@@ -601,6 +706,7 @@ paths:
                 id: subscription_Lp3mNvBxKw7RjTgYcZaE
                 resource: subscription
                 customerId: customer_Lp3mNvBxKw7RjTgYcZaE
+                subscriptionPlanId: subscription_plan_Rk5pQrSvWm8NjLhYbUcP
                 testmode: false
                 name: Pro Monthly
                 description: Full access to all Pro features
@@ -618,9 +724,12 @@ paths:
                 interval: month
                 intervalCount: 1
                 status: active
+                mandate:
+                  method: card
+                  maskedIdentifier: '4242'
                 startedAt: '2024-01-15T10:30:00Z'
                 endedAt: null
-                cancelledAt: null
+                canceledAt: null
                 renewedAt: '2024-02-15T10:30:00Z'
                 renewedUntil: '2024-03-15T10:30:00Z'
                 nextRenewalAt: '2024-03-15T10:30:00Z'
@@ -638,6 +747,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
   /one-off-products:
     get:
       operationId: listOneOffProducts
@@ -664,6 +775,7 @@ paths:
                   - data
                   - count
                   - links
+                additionalProperties: false
                 properties:
                   data:
                     type: array
@@ -704,6 +816,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
   /one-off-products/{oneOffProductId}:
     get:
       operationId: getOneOffProduct
@@ -741,6 +855,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
   /subscription-plans:
     get:
       operationId: listSubscriptionPlans
@@ -767,6 +883,7 @@ paths:
                   - data
                   - count
                   - links
+                additionalProperties: false
                 properties:
                   data:
                     type: array
@@ -825,6 +942,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
   /subscription-plans/{subscriptionPlanId}:
     get:
       operationId: getSubscriptionPlan
@@ -864,6 +983,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
   /orders:
     get:
       operationId: listOrders
@@ -888,6 +1009,7 @@ paths:
                   - data
                   - count
                   - links
+                additionalProperties: false
                 properties:
                   data:
                     type: array
@@ -914,6 +1036,12 @@ paths:
                       value: '35.09'
                       currency: EUR
                     subtotal:
+                      value: '29.00'
+                      currency: EUR
+                    reversedSubtotal:
+                      value: '0.00'
+                      currency: EUR
+                    refundableSubtotal:
                       value: '29.00'
                       currency: EUR
                     taxSummary:
@@ -946,6 +1074,8 @@ paths:
                             amount:
                               value: '6.09'
                               currency: EUR
+                        productType: subscription
+                        productId: subscription_Hn5xWqVfKm8RjTgYbUcP
                     customerDetails:
                       fullName: John Doe
                       companyName: Acme Corp
@@ -961,6 +1091,9 @@ paths:
                       customer:
                         href: https://api.vatly.com/v1/customers/customer_Xk9pQrSvWm4NjLhYbUcP
                         type: application/json
+                      customerInvoice:
+                        href: https://vatly.com/invoices/order_Hn5xWqVfKm8RjTgYbUcP
+                        type: text/html
                 count: 1
                 links:
                   self:
@@ -974,6 +1107,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
   /orders/{orderId}:
     get:
       operationId: getOrder
@@ -1008,6 +1143,12 @@ paths:
                 subtotal:
                   value: '29.00'
                   currency: EUR
+                reversedSubtotal:
+                  value: '0.00'
+                  currency: EUR
+                refundableSubtotal:
+                  value: '29.00'
+                  currency: EUR
                 taxSummary:
                   - taxRate:
                       name: VAT
@@ -1038,6 +1179,8 @@ paths:
                         amount:
                           value: '6.09'
                           currency: EUR
+                    productType: subscription
+                    productId: subscription_Hn5xWqVfKm8RjTgYbUcP
                 customerDetails:
                   fullName: John Doe
                   companyName: Acme Corp
@@ -1053,21 +1196,27 @@ paths:
                   customer:
                     href: https://api.vatly.com/v1/customers/customer_Xk9pQrSvWm4NjLhYbUcP
                     type: application/json
+                  customerInvoice:
+                    href: https://vatly.com/invoices/order_Hn5xWqVfKm8RjTgYbUcP
+                    type: text/html
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
-  /orders/{orderId}/request-address-update-link:
+        default:
+          $ref: '#/components/responses/UnexpectedError'
+  /orders/{orderId}/invoice-update-link:
     post:
-      operationId: requestOrderAddressUpdateLink
-      summary: Request address update link
+      operationId: createOrderInvoiceUpdateLink
+      summary: Create invoice update link
       description: |
-        Generates a signed URL that allows the customer to update their billing address for this order.
+        Generates a signed URL that allows the customer to update the invoice details for this order
+        (billing address, VAT number, company name).
 
         The link is valid for a limited time (typically 24 hours) and can be sent to the customer
-        to self-service update their invoice details.
+        to self-service update their invoice.
 
         **Use cases:**
         - Customer needs to add/update VAT number
@@ -1077,13 +1226,17 @@ paths:
         - Orders
       parameters:
         - $ref: '#/components/parameters/orderId'
+        - $ref: '#/components/parameters/idempotencyKey'
       responses:
         '200':
-          description: Address update link generated
+          description: Invoice update link generated
+          headers:
+            Idempotent-Replayed:
+              $ref: '#/components/headers/IdempotentReplayed'
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AddressUpdateLink'
+                $ref: '#/components/schemas/InvoiceUpdateLink'
               example:
                 href: https://vatly.com/invoices/order_Hn5xWqVfKm8RjTgYbUcP/edit?signature=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
                 type: text/html
@@ -1093,6 +1246,10 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
   /orders/{orderId}/refunds:
     get:
       operationId: listOrderRefunds
@@ -1119,6 +1276,7 @@ paths:
                   - data
                   - count
                   - links
+                additionalProperties: false
                 properties:
                   data:
                     type: array
@@ -1199,6 +1357,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
     post:
       operationId: createOrderRefund
       summary: Create a partial refund
@@ -1219,6 +1379,7 @@ paths:
         - Refunds
       parameters:
         - $ref: '#/components/parameters/orderId'
+        - $ref: '#/components/parameters/idempotencyKey'
       requestBody:
         required: true
         content:
@@ -1252,6 +1413,9 @@ paths:
       responses:
         '201':
           description: Refund created successfully
+          headers:
+            Idempotent-Replayed:
+              $ref: '#/components/headers/IdempotentReplayed'
           content:
             application/json:
               schema:
@@ -1315,6 +1479,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '422':
           description: |
             Validation failed. Common errors:
@@ -1340,6 +1506,8 @@ paths:
                     errors:
                       items.0.amount:
                         - 'Refund amount exceeds remaining refundable amount. Maximum: 15.00 EUR'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
   /orders/{orderId}/refunds/full:
     post:
       operationId: createFullOrderRefund
@@ -1360,6 +1528,7 @@ paths:
         - Refunds
       parameters:
         - $ref: '#/components/parameters/orderId'
+        - $ref: '#/components/parameters/idempotencyKey'
       requestBody:
         required: false
         content:
@@ -1372,6 +1541,9 @@ paths:
       responses:
         '201':
           description: Full refund created successfully
+          headers:
+            Idempotent-Replayed:
+              $ref: '#/components/headers/IdempotentReplayed'
           content:
             application/json:
               schema:
@@ -1435,8 +1607,12 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
   /orders/{orderId}/refunds/{refundId}:
     get:
       operationId: getOrderRefund
@@ -1518,6 +1694,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
     delete:
       operationId: cancelOrderRefund
       summary: Cancel a refund
@@ -1537,15 +1715,21 @@ paths:
       parameters:
         - $ref: '#/components/parameters/orderId'
         - $ref: '#/components/parameters/refundId'
+        - $ref: '#/components/parameters/idempotencyKey'
       responses:
         '204':
           description: Refund canceled successfully
+          headers:
+            Idempotent-Replayed:
+              $ref: '#/components/headers/IdempotentReplayed'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '422':
           description: Cannot cancel refund (not in pending status)
           content:
@@ -1554,6 +1738,8 @@ paths:
                 $ref: '#/components/schemas/Error'
               example:
                 message: Only pending refunds can be canceled.
+        default:
+          $ref: '#/components/responses/UnexpectedError'
   /orders/{orderId}/chargebacks:
     get:
       operationId: listOrderChargebacks
@@ -1580,6 +1766,7 @@ paths:
                   - data
                   - count
                   - links
+                additionalProperties: false
                 properties:
                   data:
                     type: array
@@ -1603,6 +1790,22 @@ paths:
                     settlementAmount:
                       value: '35.09'
                       currency: EUR
+                    customerId: customer_Lp3mNvBxKw7RjTgYcZaE
+                    status: lost
+                    total:
+                      value: '35.09'
+                      currency: EUR
+                    subtotal:
+                      value: '29.00'
+                      currency: EUR
+                    taxSummary:
+                      - taxRate:
+                          name: VAT
+                          percentage: 21
+                          taxablePercentage: 100
+                        amount:
+                          value: '6.09'
+                          currency: EUR
                     reason: product_not_received
                     originalOrderId: order_Fp2kQrSvWm8NjLhYbUcP
                     orderId: order_Rk5pQrSvWm8NjLhYbUcP
@@ -1631,6 +1834,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
   /orders/{orderId}/chargebacks/{chargebackId}:
     get:
       operationId: getOrderChargeback
@@ -1662,6 +1867,22 @@ paths:
                 settlementAmount:
                   value: '35.09'
                   currency: EUR
+                customerId: customer_Lp3mNvBxKw7RjTgYcZaE
+                status: lost
+                total:
+                  value: '35.09'
+                  currency: EUR
+                subtotal:
+                  value: '29.00'
+                  currency: EUR
+                taxSummary:
+                  - taxRate:
+                      name: VAT
+                      percentage: 21
+                      taxablePercentage: 100
+                    amount:
+                      value: '6.09'
+                      currency: EUR
                 reason: fraud
                 originalOrderId: order_Fp2kQrSvWm8NjLhYbUcP
                 orderId: order_Rk5pQrSvWm8NjLhYbUcP
@@ -1681,6 +1902,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
   /refunds:
     get:
       operationId: listRefunds
@@ -1705,6 +1928,7 @@ paths:
                   - data
                   - count
                   - links
+                additionalProperties: false
                 properties:
                   data:
                     type: array
@@ -1785,6 +2009,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
   /refunds/{refundId}:
     get:
       operationId: getRefund
@@ -1862,6 +2088,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
   /chargebacks:
     get:
       operationId: listChargebacks
@@ -1890,6 +2118,7 @@ paths:
                   - data
                   - count
                   - links
+                additionalProperties: false
                 properties:
                   data:
                     type: array
@@ -1913,6 +2142,22 @@ paths:
                     settlementAmount:
                       value: '35.09'
                       currency: EUR
+                    customerId: customer_Lp3mNvBxKw7RjTgYcZaE
+                    status: lost
+                    total:
+                      value: '35.09'
+                      currency: EUR
+                    subtotal:
+                      value: '29.00'
+                      currency: EUR
+                    taxSummary:
+                      - taxRate:
+                          name: VAT
+                          percentage: 21
+                          taxablePercentage: 100
+                        amount:
+                          value: '6.09'
+                          currency: EUR
                     reason: fraud
                     originalOrderId: order_Fp2kQrSvWm8NjLhYbUcP
                     orderId: order_Rk5pQrSvWm8NjLhYbUcP
@@ -1939,6 +2184,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
   /chargebacks/{chargebackId}:
     get:
       operationId: getChargeback
@@ -1966,6 +2213,22 @@ paths:
                 settlementAmount:
                   value: '35.09'
                   currency: EUR
+                customerId: customer_Lp3mNvBxKw7RjTgYcZaE
+                status: lost
+                total:
+                  value: '35.09'
+                  currency: EUR
+                subtotal:
+                  value: '29.00'
+                  currency: EUR
+                taxSummary:
+                  - taxRate:
+                      name: VAT
+                      percentage: 21
+                      taxablePercentage: 100
+                    amount:
+                      value: '6.09'
+                      currency: EUR
                 reason: fraud
                 originalOrderId: order_Fp2kQrSvWm8NjLhYbUcP
                 orderId: order_Rk5pQrSvWm8NjLhYbUcP
@@ -1985,6 +2248,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
   /webhook-events/{eventId}:
     get:
       operationId: getWebhookEvent
@@ -2012,14 +2277,77 @@ paths:
                 object:
                   id: order_Hn5xWqVfKm8RjTgYbUcP
                   resource: order
+                  customerId: customer_Xk9pQrSvWm4NjLhYbUcP
                   testmode: false
+                  metadata: {}
+                  paymentMethod: ideal
+                  createdAt: '2026-05-21T14:32:08+00:00'
                   status: paid
+                  invoiceNumber: INV-2026-0001
                   total:
                     value: '29.99'
                     currency: EUR
                   subtotal:
                     value: '24.79'
                     currency: EUR
+                  reversedSubtotal:
+                    value: '0.00'
+                    currency: EUR
+                  refundableSubtotal:
+                    value: '24.79'
+                    currency: EUR
+                  taxSummary:
+                    - taxRate:
+                        name: VAT
+                        percentage: 21
+                        taxablePercentage: 100
+                      amount:
+                        value: '5.20'
+                        currency: EUR
+                  lines:
+                    - id: order_item_Mn6xBtPvKw2RjTgYcZaE
+                      resource: orderline
+                      description: Pro Monthly Subscription
+                      quantity: 1
+                      basePrice:
+                        value: '24.79'
+                        currency: EUR
+                      total:
+                        value: '29.99'
+                        currency: EUR
+                      subtotal:
+                        value: '24.79'
+                        currency: EUR
+                      taxes:
+                        - taxRate:
+                            name: VAT
+                            percentage: 21
+                            taxablePercentage: 100
+                          amount:
+                            value: '5.20'
+                            currency: EUR
+                      productType: subscription
+                      productId: subscription_Hn5xWqVfKm8RjTgYbUcP
+                  customerDetails:
+                    fullName: John Doe
+                    companyName: Acme Corp
+                    streetAndNumber: 123 Main Street
+                    city: Berlin
+                    postalCode: '10115'
+                    country: DE
+                    email: john@acme.com
+                  links:
+                    self:
+                      href: https://api.vatly.com/v1/orders/order_Hn5xWqVfKm8RjTgYbUcP
+                      type: application/json
+                    customer:
+                      href: https://api.vatly.com/v1/customers/customer_Xk9pQrSvWm4NjLhYbUcP
+                      type: application/json
+                    customerInvoice:
+                      href: https://vatly.com/invoices/order_Hn5xWqVfKm8RjTgYbUcP
+                      type: text/html
+                createdAt: '2026-05-21T14:32:08+00:00'
+                testmode: false
                 links:
                   self:
                     href: https://api.vatly.com/v1/webhook-events/webhook_event_Qk8pRtSvWm2NjLhYcZaE
@@ -2030,6 +2358,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
   /subscriptions:
     get:
       operationId: listSubscriptions
@@ -2055,6 +2385,7 @@ paths:
                   - data
                   - count
                   - links
+                additionalProperties: false
                 properties:
                   data:
                     type: array
@@ -2071,6 +2402,7 @@ paths:
                   - id: subscription_Lp3mNvBxKw7RjTgYcZaE
                     resource: subscription
                     customerId: customer_Lp3mNvBxKw7RjTgYcZaE
+                    subscriptionPlanId: subscription_plan_Rk5pQrSvWm8NjLhYbUcP
                     testmode: false
                     name: Pro Monthly
                     description: Full access to all Pro features
@@ -2088,9 +2420,12 @@ paths:
                     interval: month
                     intervalCount: 1
                     status: active
+                    mandate:
+                      method: card
+                      maskedIdentifier: '4242'
                     startedAt: '2024-01-15T10:30:00Z'
                     endedAt: null
-                    cancelledAt: null
+                    canceledAt: null
                     renewedAt: '2024-02-15T10:30:00Z'
                     renewedUntil: '2024-03-15T10:30:00Z'
                     nextRenewalAt: '2024-03-15T10:30:00Z'
@@ -2105,6 +2440,7 @@ paths:
                   - id: subscription_Wt5mNvBxKw7YcZaEjLhR
                     resource: subscription
                     customerId: customer_Mn6xBtPvKw2RjTgYcZaE
+                    subscriptionPlanId: subscription_plan_Wt5mNvBxKw7YcZaEjLhR
                     testmode: false
                     name: Enterprise Yearly
                     description: Enterprise features with priority support
@@ -2123,9 +2459,12 @@ paths:
                     interval: year
                     intervalCount: 1
                     status: active
+                    mandate:
+                      method: card
+                      maskedIdentifier: '4242'
                     startedAt: '2024-01-01T00:00:00Z'
                     endedAt: null
-                    cancelledAt: null
+                    canceledAt: null
                     renewedAt: '2024-01-01T00:00:00Z'
                     renewedUntil: '2025-01-01T00:00:00Z'
                     nextRenewalAt: '2025-01-01T00:00:00Z'
@@ -2150,6 +2489,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
   /subscriptions/{subscriptionId}:
     get:
       operationId: getSubscription
@@ -2170,6 +2511,7 @@ paths:
                 id: subscription_Lp3mNvBxKw7RjTgYcZaE
                 resource: subscription
                 customerId: customer_Lp3mNvBxKw7RjTgYcZaE
+                subscriptionPlanId: subscription_plan_Rk5pQrSvWm8NjLhYbUcP
                 testmode: false
                 name: Pro Monthly
                 description: Full access to all Pro features
@@ -2187,9 +2529,12 @@ paths:
                 interval: month
                 intervalCount: 1
                 status: active
+                mandate:
+                  method: card
+                  maskedIdentifier: '4242'
                 startedAt: '2024-01-15T10:30:00Z'
                 endedAt: null
-                cancelledAt: null
+                canceledAt: null
                 renewedAt: '2024-02-15T10:30:00Z'
                 renewedUntil: '2024-03-15T10:30:00Z'
                 nextRenewalAt: '2024-03-15T10:30:00Z'
@@ -2207,6 +2552,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
     patch:
       operationId: updateSubscription
       summary: Update a subscription
@@ -2238,6 +2585,7 @@ paths:
         - Subscriptions
       parameters:
         - $ref: '#/components/parameters/subscriptionId'
+        - $ref: '#/components/parameters/idempotencyKey'
       requestBody:
         required: true
         content:
@@ -2264,11 +2612,18 @@ paths:
                   applyImmediately: false
               extendTrial:
                 summary: Extend trial period
+                description: |
+                  `trialUntil` cannot be sent on its own — at least one of
+                  `subscriptionPlanId` or `quantity` is required.
                 value:
+                  quantity: 1
                   trialUntil: '2024-02-28T00:00:00Z'
       responses:
         '200':
           description: Subscription updated successfully
+          headers:
+            Idempotent-Replayed:
+              $ref: '#/components/headers/IdempotentReplayed'
           content:
             application/json:
               schema:
@@ -2277,6 +2632,7 @@ paths:
                 id: subscription_Lp3mNvBxKw7RjTgYcZaE
                 resource: subscription
                 customerId: customer_Lp3mNvBxKw7RjTgYcZaE
+                subscriptionPlanId: subscription_plan_Wt5mNvBxKw7YcZaEjLhR
                 testmode: false
                 name: Pro Yearly
                 description: Full access to all Pro features, billed yearly
@@ -2294,9 +2650,12 @@ paths:
                 interval: year
                 intervalCount: 1
                 status: active
+                mandate:
+                  method: card
+                  maskedIdentifier: '4242'
                 startedAt: '2024-01-15T10:30:00Z'
                 endedAt: null
-                cancelledAt: null
+                canceledAt: null
                 renewedAt: '2024-02-15T10:30:00Z'
                 renewedUntil: '2025-02-15T10:30:00Z'
                 nextRenewalAt: '2025-02-15T10:30:00Z'
@@ -2314,6 +2673,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '422':
           description: |
             Validation failed. Common errors:
@@ -2324,6 +2685,23 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ValidationError'
+              examples:
+                validationFailed:
+                  summary: Field validation failed
+                  value:
+                    message: The given data was invalid.
+                    errors:
+                      subscriptionPlanId:
+                        - At least one of subscriptionPlanId or quantity is required.
+                testmodeMismatch:
+                  summary: Plan exists but in the wrong mode
+                  value:
+                    message: The given data was invalid.
+                    errors:
+                      subscriptionPlanId:
+                        - Subscription plan exists, but the wrong mode is used. Try switching live / test API keys.
+        default:
+          $ref: '#/components/responses/UnexpectedError'
     delete:
       operationId: cancelSubscription
       summary: Cancel a subscription
@@ -2335,13 +2713,16 @@ paths:
         - **Immediate:** Subscription ends immediately when `immediately=true` is specified
 
         **Notes:**
-        - Canceled subscriptions cannot be reactivated through the API
+        - A subscription that was canceled with a grace period (the default) can be resumed via
+          `POST /subscriptions/{subscriptionId}/resume` while its `status` is `on_grace_period`
+        - A subscription that was canceled immediately cannot be reactivated; create a new subscription instead
         - Customers retain access until `renewedUntil` date (unless canceled immediately)
         - No refunds are issued automatically; use the Refunds API if needed
       tags:
         - Subscriptions
       parameters:
         - $ref: '#/components/parameters/subscriptionId'
+        - $ref: '#/components/parameters/idempotencyKey'
         - name: immediately
           in: query
           description: |
@@ -2355,27 +2736,32 @@ paths:
       responses:
         '204':
           description: Subscription canceled successfully
+          headers:
+            Idempotent-Replayed:
+              $ref: '#/components/headers/IdempotentReplayed'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '422':
           description: Subscription cannot be canceled (already canceled or ended)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-  /subscriptions/{subscriptionId}/update-billing:
-    patch:
-      operationId: updateSubscriptionBilling
-      summary: Update billing details (hosted)
+        default:
+          $ref: '#/components/responses/UnexpectedError'
+  /subscriptions/{subscriptionId}/billing-update-link:
+    post:
+      operationId: createSubscriptionBillingUpdateLink
+      summary: Create billing update link
       description: |
-        Initiates a hosted billing update flow for the subscription.
-
-        Returns a redirect URL where the customer can update their billing address,
-        VAT number, and other invoice details.
+        Generates a signed URL that allows the customer to update the billing details for this
+        subscription (billing address, VAT number, company name) via a hosted flow.
 
         **Flow:**
         1. Call this endpoint with redirect URLs
@@ -2391,6 +2777,7 @@ paths:
         - Subscriptions
       parameters:
         - $ref: '#/components/parameters/subscriptionId'
+        - $ref: '#/components/parameters/idempotencyKey'
       requestBody:
         required: true
         content:
@@ -2405,7 +2792,10 @@ paths:
                 taxId: DE123456789
       responses:
         '200':
-          description: Billing update flow initiated
+          description: Billing update link generated
+          headers:
+            Idempotent-Replayed:
+              $ref: '#/components/headers/IdempotentReplayed'
           content:
             application/json:
               schema:
@@ -2413,6 +2803,7 @@ paths:
                 required:
                   - href
                   - type
+                additionalProperties: false
                 properties:
                   href:
                     type: string
@@ -2429,8 +2820,112 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
+  /subscriptions/{subscriptionId}/resume:
+    post:
+      operationId: resumeSubscription
+      summary: Resume a canceled subscription
+      description: |
+        Resumes a subscription that was previously canceled with a grace period, while it is still
+        within that grace period.
+
+        **When this works:**
+        - The subscription's `status` is `on_grace_period`
+
+          (`endedAt` stays `null` throughout the grace period — it is only set once the
+          subscription has actually ended, so resumability is keyed off `status`, not `endedAt`.)
+
+        **Result:**
+        - Status returns to `active`
+        - The existing billing cycle and renewal schedule are preserved (no new charge fires immediately)
+        - The original payment mandate remains in effect
+        - A `subscription.resumed` webhook is delivered to your configured endpoint
+        - `canceledAt` is cleared (`endedAt` was already `null` during the grace period)
+        - The refreshed subscription is returned in the response body
+
+        **When this does NOT work:**
+        - Subscription was canceled immediately (`status` is `canceled`) — create a new subscription instead
+        - Grace period has already lapsed (`status` is now `canceled` and `endedAt` is set) — create a new subscription instead
+        - Subscription is already active (no-op rejected for clarity, not silently ignored)
+      tags:
+        - Subscriptions
+      parameters:
+        - $ref: '#/components/parameters/subscriptionId'
+        - $ref: '#/components/parameters/idempotencyKey'
+      responses:
+        '200':
+          description: Subscription resumed successfully
+          headers:
+            Idempotent-Replayed:
+              $ref: '#/components/headers/IdempotentReplayed'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subscription'
+              example:
+                id: subscription_Lp3mNvBxKw7RjTgYcZaE
+                resource: subscription
+                customerId: customer_Lp3mNvBxKw7RjTgYcZaE
+                subscriptionPlanId: subscription_plan_Rk5pQrSvWm8NjLhYbUcP
+                testmode: false
+                name: Pro Monthly
+                description: Full access to all Pro features
+                billingAddress:
+                  fullName: John Doe
+                  companyName: Acme Corp
+                  streetAndNumber: 123 Main Street
+                  city: Berlin
+                  postalCode: '10115'
+                  country: DE
+                basePrice:
+                  value: '29.00'
+                  currency: EUR
+                quantity: 1
+                interval: month
+                intervalCount: 1
+                status: active
+                mandate:
+                  method: card
+                  maskedIdentifier: '4242'
+                startedAt: '2024-01-15T10:30:00Z'
+                endedAt: null
+                canceledAt: null
+                renewedAt: '2024-02-15T10:30:00Z'
+                renewedUntil: '2024-03-15T10:30:00Z'
+                nextRenewalAt: '2024-03-15T10:30:00Z'
+                trialUntil: null
+                links:
+                  self:
+                    href: https://api.vatly.com/v1/subscriptions/subscription_Lp3mNvBxKw7RjTgYcZaE
+                    type: application/json
+                  customer:
+                    href: https://api.vatly.com/v1/customers/customer_Lp3mNvBxKw7RjTgYcZaE
+                    type: application/json
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          description: |
+            Subscription is not within an active grace period. Common causes:
+            - Subscription was canceled immediately (status `canceled`)
+            - Grace period has already lapsed (`status` is now `canceled`)
+            - Subscription is already active (was not canceled, or already resumed)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
   /test-helpers/subscriptions/{subscriptionId}/fast-forward-renewal:
     post:
       operationId: fastForwardSubscriptionRenewal
@@ -2449,9 +2944,13 @@ paths:
         - Test Helpers
       parameters:
         - $ref: '#/components/parameters/subscriptionId'
+        - $ref: '#/components/parameters/idempotencyKey'
       responses:
         '200':
           description: Subscription renewed successfully
+          headers:
+            Idempotent-Replayed:
+              $ref: '#/components/headers/IdempotentReplayed'
           content:
             application/json:
               schema:
@@ -2460,6 +2959,7 @@ paths:
                 id: subscription_Lp3mNvBxKw7RjTgYcZaE
                 resource: subscription
                 customerId: customer_Lp3mNvBxKw7RjTgYcZaE
+                subscriptionPlanId: subscription_plan_Rk5pQrSvWm8NjLhYbUcP
                 testmode: true
                 name: Pro Monthly
                 description: Full access to all Pro features
@@ -2477,9 +2977,12 @@ paths:
                 interval: month
                 intervalCount: 1
                 status: active
+                mandate:
+                  method: card
+                  maskedIdentifier: '4242'
                 startedAt: '2024-01-15T10:30:00Z'
                 endedAt: null
-                cancelledAt: null
+                canceledAt: null
                 renewedAt: '2024-03-15T10:30:00Z'
                 renewedUntil: '2024-04-15T10:30:00Z'
                 nextRenewalAt: '2024-04-15T10:30:00Z'
@@ -2497,6 +3000,10 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
   /test-helpers/mandated-payments/{transactionId}/simulate-failure:
     post:
       operationId: simulatePaymentFailure
@@ -2522,6 +3029,7 @@ paths:
           schema:
             type: string
           example: mollie_mandated_payment_Xk9pQrSvWm4NjLhYbUcP
+        - $ref: '#/components/parameters/idempotencyKey'
       requestBody:
         required: false
         content:
@@ -2547,6 +3055,9 @@ paths:
       responses:
         '200':
           description: Payment failure simulated
+          headers:
+            Idempotent-Replayed:
+              $ref: '#/components/headers/IdempotentReplayed'
           content:
             application/json:
               schema:
@@ -2555,6 +3066,7 @@ paths:
                   - id
                   - status
                   - failureReason
+                additionalProperties: false
                 properties:
                   id:
                     type: string
@@ -2578,6 +3090,320 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
+webhooks:
+  order.paid:
+    post:
+      operationId: onOrderPaid
+      summary: Order paid
+      description: An order's payment was successful. `object` is the Order.
+      tags:
+        - Webhook Events
+      parameters:
+        - $ref: '#/components/parameters/VatlySignature'
+        - $ref: '#/components/parameters/VatlyEventId'
+      requestBody:
+        $ref: '#/components/requestBodies/WebhookDelivery'
+      responses:
+        2XX:
+          $ref: '#/components/responses/Acknowledged'
+  order.canceled:
+    post:
+      operationId: onOrderCanceled
+      summary: Order canceled
+      description: An order was canceled. `object` is the Order.
+      tags:
+        - Webhook Events
+      parameters:
+        - $ref: '#/components/parameters/VatlySignature'
+        - $ref: '#/components/parameters/VatlyEventId'
+      requestBody:
+        $ref: '#/components/requestBodies/WebhookDelivery'
+      responses:
+        2XX:
+          $ref: '#/components/responses/Acknowledged'
+  order.chargeback_received:
+    post:
+      operationId: onOrderChargebackReceived
+      summary: Chargeback received
+      description: |
+        A chargeback was received for an order. `entityType` is `order`, but
+        `object` is the Chargeback.
+      tags:
+        - Webhook Events
+      parameters:
+        - $ref: '#/components/parameters/VatlySignature'
+        - $ref: '#/components/parameters/VatlyEventId'
+      requestBody:
+        $ref: '#/components/requestBodies/WebhookDelivery'
+      responses:
+        2XX:
+          $ref: '#/components/responses/Acknowledged'
+  order.chargeback_reversed:
+    post:
+      operationId: onOrderChargebackReversed
+      summary: Chargeback reversed
+      description: |
+        A previously received chargeback was reversed. `entityType` is `order`, but
+        `object` is the Chargeback.
+      tags:
+        - Webhook Events
+      parameters:
+        - $ref: '#/components/parameters/VatlySignature'
+        - $ref: '#/components/parameters/VatlyEventId'
+      requestBody:
+        $ref: '#/components/requestBodies/WebhookDelivery'
+      responses:
+        2XX:
+          $ref: '#/components/responses/Acknowledged'
+  order.payment_failed:
+    post:
+      operationId: onOrderPaymentFailed
+      summary: Order payment failed
+      description: |
+        A payment failed and a dunning process was initiated for the order.
+        `entityType` is `order` and `object` is the Order.
+      tags:
+        - Webhook Events
+      parameters:
+        - $ref: '#/components/parameters/VatlySignature'
+        - $ref: '#/components/parameters/VatlyEventId'
+      requestBody:
+        $ref: '#/components/requestBodies/WebhookDelivery'
+      responses:
+        2XX:
+          $ref: '#/components/responses/Acknowledged'
+  refund.completed:
+    post:
+      operationId: onRefundCompleted
+      summary: Refund completed
+      description: A refund was processed successfully. `object` is the Refund.
+      tags:
+        - Webhook Events
+      parameters:
+        - $ref: '#/components/parameters/VatlySignature'
+        - $ref: '#/components/parameters/VatlyEventId'
+      requestBody:
+        $ref: '#/components/requestBodies/WebhookDelivery'
+      responses:
+        2XX:
+          $ref: '#/components/responses/Acknowledged'
+  refund.failed:
+    post:
+      operationId: onRefundFailed
+      summary: Refund failed
+      description: A refund failed to process. `object` is the Refund.
+      tags:
+        - Webhook Events
+      parameters:
+        - $ref: '#/components/parameters/VatlySignature'
+        - $ref: '#/components/parameters/VatlyEventId'
+      requestBody:
+        $ref: '#/components/requestBodies/WebhookDelivery'
+      responses:
+        2XX:
+          $ref: '#/components/responses/Acknowledged'
+  refund.canceled:
+    post:
+      operationId: onRefundCanceled
+      summary: Refund canceled
+      description: A refund was canceled before completing. `object` is the Refund.
+      tags:
+        - Webhook Events
+      parameters:
+        - $ref: '#/components/parameters/VatlySignature'
+        - $ref: '#/components/parameters/VatlyEventId'
+      requestBody:
+        $ref: '#/components/requestBodies/WebhookDelivery'
+      responses:
+        2XX:
+          $ref: '#/components/responses/Acknowledged'
+  subscription.started:
+    post:
+      operationId: onSubscriptionStarted
+      summary: Subscription started
+      description: A subscription was started. `object` is the Subscription.
+      tags:
+        - Webhook Events
+      parameters:
+        - $ref: '#/components/parameters/VatlySignature'
+        - $ref: '#/components/parameters/VatlyEventId'
+      requestBody:
+        $ref: '#/components/requestBodies/WebhookDelivery'
+      responses:
+        2XX:
+          $ref: '#/components/responses/Acknowledged'
+  subscription.canceled_immediately:
+    post:
+      operationId: onSubscriptionCanceledImmediately
+      summary: Subscription canceled immediately
+      description: A subscription was canceled with immediate effect. `object` is the Subscription.
+      tags:
+        - Webhook Events
+      parameters:
+        - $ref: '#/components/parameters/VatlySignature'
+        - $ref: '#/components/parameters/VatlyEventId'
+      requestBody:
+        $ref: '#/components/requestBodies/WebhookDelivery'
+      responses:
+        2XX:
+          $ref: '#/components/responses/Acknowledged'
+  subscription.canceled_with_grace_period:
+    post:
+      operationId: onSubscriptionCanceledWithGracePeriod
+      summary: Subscription canceled with grace period
+      description: |
+        A subscription was canceled and will remain active until the end of its
+        grace period. `object` is the Subscription.
+      tags:
+        - Webhook Events
+      parameters:
+        - $ref: '#/components/parameters/VatlySignature'
+        - $ref: '#/components/parameters/VatlyEventId'
+      requestBody:
+        $ref: '#/components/requestBodies/WebhookDelivery'
+      responses:
+        2XX:
+          $ref: '#/components/responses/Acknowledged'
+  subscription.cancellation_grace_period_completed:
+    post:
+      operationId: onSubscriptionCancellationGracePeriodCompleted
+      summary: Subscription grace period completed
+      description: |
+        A canceled subscription's grace period ended and the subscription is now
+        fully canceled. `object` is the Subscription.
+      tags:
+        - Webhook Events
+      parameters:
+        - $ref: '#/components/parameters/VatlySignature'
+        - $ref: '#/components/parameters/VatlyEventId'
+      requestBody:
+        $ref: '#/components/requestBodies/WebhookDelivery'
+      responses:
+        2XX:
+          $ref: '#/components/responses/Acknowledged'
+  subscription.resumed:
+    post:
+      operationId: onSubscriptionResumed
+      summary: Subscription resumed
+      description: |
+        A canceled subscription was resumed during its grace period. `object` is
+        the Subscription.
+      tags:
+        - Webhook Events
+      parameters:
+        - $ref: '#/components/parameters/VatlySignature'
+        - $ref: '#/components/parameters/VatlyEventId'
+      requestBody:
+        $ref: '#/components/requestBodies/WebhookDelivery'
+      responses:
+        2XX:
+          $ref: '#/components/responses/Acknowledged'
+  subscription.billing_updated:
+    post:
+      operationId: onSubscriptionBillingUpdated
+      summary: Subscription billing updated
+      description: |
+        A subscription's billing details changed server-side. In practice today
+        this is the mandate (payment method on file) — e.g. the customer completed
+        the hosted billing-update flow or the mandate was replaced
+        customer-service-side. `object` is the Subscription, enriched with the
+        current mandate (`object.mandate.method` and `object.mandate.maskedIdentifier`).
+        Use this to refresh the masked payment method identifier you display to the
+        customer without polling or a follow-up `GET /v1/subscriptions/{id}`.
+      tags:
+        - Webhook Events
+      parameters:
+        - $ref: '#/components/parameters/VatlySignature'
+        - $ref: '#/components/parameters/VatlyEventId'
+      requestBody:
+        $ref: '#/components/requestBodies/WebhookDelivery'
+      responses:
+        2XX:
+          $ref: '#/components/responses/Acknowledged'
+  checkout.paid:
+    post:
+      operationId: onCheckoutPaid
+      summary: Checkout paid
+      description: A checkout was paid successfully. `object` is the Checkout.
+      tags:
+        - Webhook Events
+      parameters:
+        - $ref: '#/components/parameters/VatlySignature'
+        - $ref: '#/components/parameters/VatlyEventId'
+      requestBody:
+        $ref: '#/components/requestBodies/WebhookDelivery'
+      responses:
+        2XX:
+          $ref: '#/components/responses/Acknowledged'
+  checkout.failed:
+    post:
+      operationId: onCheckoutFailed
+      summary: Checkout payment failed
+      description: A checkout payment failed. `object` is the Checkout.
+      tags:
+        - Webhook Events
+      parameters:
+        - $ref: '#/components/parameters/VatlySignature'
+        - $ref: '#/components/parameters/VatlyEventId'
+      requestBody:
+        $ref: '#/components/requestBodies/WebhookDelivery'
+      responses:
+        2XX:
+          $ref: '#/components/responses/Acknowledged'
+  checkout.canceled:
+    post:
+      operationId: onCheckoutCanceled
+      summary: Checkout canceled
+      description: A checkout was canceled. `object` is the Checkout.
+      tags:
+        - Webhook Events
+      parameters:
+        - $ref: '#/components/parameters/VatlySignature'
+        - $ref: '#/components/parameters/VatlyEventId'
+      requestBody:
+        $ref: '#/components/requestBodies/WebhookDelivery'
+      responses:
+        2XX:
+          $ref: '#/components/responses/Acknowledged'
+  checkout.expired:
+    post:
+      operationId: onCheckoutExpired
+      summary: Checkout expired
+      description: A checkout session expired before being paid. `object` is the Checkout.
+      tags:
+        - Webhook Events
+      parameters:
+        - $ref: '#/components/parameters/VatlySignature'
+        - $ref: '#/components/parameters/VatlyEventId'
+      requestBody:
+        $ref: '#/components/requestBodies/WebhookDelivery'
+      responses:
+        2XX:
+          $ref: '#/components/responses/Acknowledged'
+  webhook.setup:
+    post:
+      operationId: onWebhookSetup
+      summary: Webhook setup
+      description: |
+        Verification call sent when a webhook endpoint is registered or its URL is
+        changed, to confirm the endpoint is reachable. `entityType` is `webhook` and
+        `object` is the (secret-free) endpoint config. Acknowledge with any 2xx; no
+        other action is required. This call is not persisted and is not retried, and
+        therefore omits the `links` field carried by regular event deliveries.
+      tags:
+        - Webhook Events
+      parameters:
+        - $ref: '#/components/parameters/VatlySignature'
+        - $ref: '#/components/parameters/VatlyEventId'
+      requestBody:
+        $ref: '#/components/requestBodies/WebhookDelivery'
+      responses:
+        2XX:
+          $ref: '#/components/responses/SetupAcknowledged'
 components:
   securitySchemes:
     BearerAuth:
@@ -2634,6 +3460,28 @@ components:
       schema:
         type: string
       example: checkout_Rk5pQrSvWm8NjLhYbUcP
+    idempotencyKey:
+      name: Idempotency-Key
+      in: header
+      description: |
+        A unique key the client generates per logical mutating operation to
+        make retries safe. Vatly stores the first response keyed by
+        `(token, endpoint, key)` and returns it verbatim on subsequent
+        requests with the same key, setting `Idempotent-Replayed: true` on
+        the replayed response.
+
+        Replaying with a different request body or different query
+        parameters returns `409 Conflict`. Keys are scoped per endpoint and
+        retained for 24 hours.
+
+        Recommended format: UUIDv4. Send on every mutating request
+        (POST, PATCH, PUT, DELETE) where retry safety matters.
+      required: false
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
+      example: 9f6a3b1c-7e2d-4f7b-9c5a-2c1d5b7e9f3a
     checkoutId:
       name: checkoutId
       in: path
@@ -2708,7 +3556,61 @@ components:
       schema:
         type: string
       example: webhook_event_Qk8pRtSvWm2NjLhYcZaE
+    VatlySignature:
+      name: Vatly-Signature
+      in: header
+      required: true
+      description: |
+        HMAC-SHA256 signature of the raw request body, formatted `t=<unix-timestamp>,v1=<hex>`.
+        Recompute it over the exact bytes received and compare before trusting the payload.
+        A fresh signature is sent on every delivery attempt (initial and retries).
+      schema:
+        type: string
+      example: t=1716301928,v1=5f3cbe2a9d1e4c7b8a0f6d2e1c3b4a5968778695a4b3c2d1e0f9a8b7c6d5e4f3a
+    VatlyEventId:
+      name: Vatly-Event-Id
+      in: header
+      required: true
+      description: |
+        Stable identifier for this event, constant across delivery retries. Use it as an
+        idempotency / dedup key so a retried delivery is not processed twice.
+      schema:
+        type: string
+      example: webhook_event_Qk8pRtSvWm2NjLhYcZaE
+  headers:
+    IdempotentReplayed:
+      description: |
+        Present and set to `true` when the response was replayed from a
+        previously stored result keyed by `Idempotency-Key`. Absent (or
+        `false`) for first-time requests.
+      schema:
+        type: boolean
+      example: true
   responses:
+    UnexpectedError:
+      description: |
+        Catch-all for any status not explicitly enumerated on the operation.
+        Branch on the HTTP status code:
+        - `400` Bad Request — malformed request (e.g. invalid JSON body)
+        - `429` Too Many Requests — rate limit exceeded; the `Retry-After`
+          header gives the number of seconds to wait before retrying
+        - `500` Internal Server Error — an unexpected error occurred; the
+          request can typically be retried
+
+        The body is always the standard `Error` shape.
+      headers:
+        Retry-After:
+          description: Present on `429` responses — seconds to wait before retrying.
+          required: false
+          schema:
+            type: integer
+          example: 60
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            message: An unexpected error occurred. Please try again later.
     Unauthorized:
       description: Unauthorized - Authentication credentials were missing or invalid
       content:
@@ -2746,6 +3648,36 @@ components:
                 - The email must be a valid email address.
               products.0.id:
                 - The selected products.0.id is invalid.
+    Conflict:
+      description: |
+        Conflict — The request could not be completed because of one of
+        the following:
+
+        - **Idempotency replay mismatch** (`Idempotency-Key` reused with
+          different request parameters). Retry with the original parameters
+          or generate a new key.
+        - **Optimistic concurrency conflict** (two writers modifying the
+          same resource at the same version). Reload the latest state
+          and retry — the conflict resolves itself unless contention is
+          sustained.
+
+        The HTTP status (`409`) is the same for both; the `message`
+        distinguishes them.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            idempotency_replay_mismatch:
+              summary: Idempotency-Key reused with a different payload
+              value:
+                message: Idempotency-Key has already been used with different request parameters.
+                details:
+                  idempotency_key: 9f6a3b1c-7e2d-4f7b-9c5a-2c1d5b7e9f3a
+            concurrency_conflict:
+              summary: Concurrent write on the same resource
+              value:
+                message: The resource was modified concurrently. Reload the latest state and retry.
     NotFound:
       description: Not Found - The requested resource does not exist
       content:
@@ -2754,49 +3686,16 @@ components:
             $ref: '#/components/schemas/Error'
           example:
             message: Checkout not found.
-    BadRequest:
-      description: Bad Request - The request was malformed or invalid
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-          example:
-            message: Invalid request format
-    TestmodeMismatch:
+    Acknowledged:
       description: |
-        Unprocessable Entity - A referenced resource exists but was created in a different mode.
-        Switch between live/test API tokens to access the correct resources.
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ValidationError'
-          example:
-            message: The given data was invalid.
-            errors:
-              customerId:
-                - Customer exists, but the wrong mode is used. Try switching live / test API keys.
-    TooManyRequests:
-      description: Too Many Requests - Rate limit exceeded
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-          example:
-            message: Too many requests. Please try again later.
-      headers:
-        Retry-After:
-          description: Number of seconds to wait before retrying
-          schema:
-            type: integer
-          example: 60
-    InternalServerError:
-      description: Internal Server Error - An unexpected error occurred
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-          example:
-            message: An unexpected error occurred. Please try again later.
+        Acknowledged. Return any 2xx status to confirm receipt. A non-2xx response
+        or a timeout causes Vatly to retry the delivery with backoff.
+    SetupAcknowledged:
+      description: |
+        Endpoint reachable. Return any 2xx status to confirm. Unlike event
+        deliveries, the setup call is a synchronous verification check: a non-2xx
+        response or timeout fails endpoint registration/verification and is NOT
+        retried.
   schemas:
     Money:
       type: object
@@ -2804,20 +3703,105 @@ components:
       required:
         - value
         - currency
+      additionalProperties: false
       properties:
         value:
           type: string
           description: |
-            The amount as a decimal string.
-            Uses string type to preserve precision for financial calculations.
+            The amount as a decimal string. Sent and returned as a string to
+            preserve precision for financial calculations.
+
+            The number of required decimal places is **currency-dependent**: it
+            equals the currency's ISO 4217 minor-unit count — the same rule the
+            server enforces via [moneyphp/money](https://github.com/moneyphp/money)'s
+            `DecimalMoneyParser`. The `(value, currency)` pair is validated
+            together (see the `oneOf` below); mixing precisions is rejected:
+
+            - 2 decimals — EUR, USD (and most currencies): `"10.00"` ✓, `"10"` ✗, `"10.0"` ✗, `"10.000"` ✗
+            - 0 decimals — e.g. JPY: `"1000"` ✓, `"1000.00"` ✗   *(not yet enabled)*
+            - 3 decimals — e.g. BHD, KWD, OMR, TND: `"1.000"` ✓, `"1.00"` ✗   *(not yet enabled)*
+
+            Because the value is a decimal amount (not minor units), `"1000"`
+            means one thousand units — valid only for a 0-decimal currency; for
+            EUR/USD you must write `"1000.00"`.
           example: '99.99'
-          pattern: ^\d+(\.\d{1,2})?$
         currency:
           type: string
-          description: ISO 4217 currency code
+          description: |
+            ISO 4217 currency code. Vatly aligns its supported currency set
+            with Mollie's; currencies are enabled as PSP support and
+            downstream tax/FX coverage are in place. Expansion beyond this
+            list is tracked in issue #1404.
+          enum:
+            - EUR
+            - USD
           example: EUR
-          minLength: 3
-          maxLength: 3
+      oneOf:
+        - title: Two-decimal currencies (default)
+          properties:
+            currency:
+              not:
+                enum:
+                  - BIF
+                  - CLP
+                  - DJF
+                  - GNF
+                  - ISK
+                  - JPY
+                  - KMF
+                  - KRW
+                  - PYG
+                  - RWF
+                  - UGX
+                  - VND
+                  - VUV
+                  - XAF
+                  - XOF
+                  - XPF
+                  - BHD
+                  - IQD
+                  - JOD
+                  - KWD
+                  - LYD
+                  - OMR
+                  - TND
+            value:
+              pattern: ^\d+\.\d{2}$
+        - title: Zero-decimal currencies
+          properties:
+            currency:
+              enum:
+                - BIF
+                - CLP
+                - DJF
+                - GNF
+                - ISK
+                - JPY
+                - KMF
+                - KRW
+                - PYG
+                - RWF
+                - UGX
+                - VND
+                - VUV
+                - XAF
+                - XOF
+                - XPF
+            value:
+              pattern: ^\d+$
+        - title: Three-decimal currencies
+          properties:
+            currency:
+              enum:
+                - BHD
+                - IQD
+                - JOD
+                - KWD
+                - LYD
+                - OMR
+                - TND
+            value:
+              pattern: ^\d+\.\d{3}$
     Link:
       type: object
       description: HATEOAS link to a related resource
@@ -2963,7 +3947,10 @@ components:
             - string
             - 'null'
           format: email
-          description: Email address
+          description: |
+            Email address.
+            Internationalized domains must use their Punycode (ASCII) form
+            per RFC 3492 — e.g. `billing@xn--mller-kva.de`.
           example: billing@acme.com
     Metadata:
       type:
@@ -3001,7 +3988,13 @@ components:
           description: Link to the previous page (null if on the first page)
     Error:
       type: object
-      description: Standard error response
+      description: |
+        Standard error response.
+
+        Every non-validation error path returns this shape — `message` is
+        always present, and `details` (if present) is an object carrying
+        structured context attached by the originating exception. HTTP
+        status code is the primary programmatic discriminator.
       required:
         - message
       properties:
@@ -3009,6 +4002,17 @@ components:
           type: string
           description: Human-readable error message
           example: The requested resource was not found.
+        details:
+          type: object
+          description: |
+            Optional structured context attached by the originating exception.
+            Shape depends on the specific error case; clients should treat
+            unknown keys as forward-compatible additions and rely on the HTTP
+            status code for branching logic.
+          additionalProperties: true
+          example:
+            resource_type: checkout
+            resource_id: checkout_abc123
     ValidationError:
       type: object
       description: Validation error response with field-specific errors
@@ -3043,6 +4047,8 @@ components:
       required:
         - id
         - resource
+        - customerId
+        - orderId
         - testmode
         - redirectUrlSuccess
         - redirectUrlCanceled
@@ -3050,6 +4056,7 @@ components:
         - status
         - createdAt
         - links
+      additionalProperties: false
       properties:
         id:
           type: string
@@ -3060,13 +4067,23 @@ components:
           description: Resource type identifier
           const: checkout
           example: checkout
+        customerId:
+          type:
+            - string
+            - 'null'
+          description: |
+            ID of the customer associated with this checkout.
+            Null until a customer has been associated (for an anonymous
+            checkout this happens when the buyer completes payment).
+          example: customer_7kBmRtPvXw2NjLhYcZaE
         orderId:
           type:
             - string
             - 'null'
           description: |
-            ID of the order created from this checkout.
-            Only present after checkout completion.
+            ID of the order created from this checkout. Always present in the
+            payload; `null` until the checkout completes, then set to the created
+            order id.
           example: order_Tk7mNvBxKw2RjTgYcZaE
         testmode:
           type: boolean
@@ -3118,6 +4135,8 @@ components:
           required:
             - checkoutUrl
             - self
+            - order
+          additionalProperties: false
           properties:
             checkoutUrl:
               allOf:
@@ -3131,12 +4150,13 @@ components:
               oneOf:
                 - $ref: '#/components/schemas/Link'
                 - type: 'null'
-              description: Link to the created order (only after completion)
+              description: Link to the created order. Always present; `null` until the checkout completes.
     CheckoutProduct:
       type: object
       description: A product to add to the checkout
       required:
         - id
+      additionalProperties: false
       properties:
         id:
           type: string
@@ -3177,17 +4197,26 @@ components:
         - redirectUrlSuccess
         - redirectUrlCanceled
         - products
+      additionalProperties: false
       properties:
         redirectUrlSuccess:
           type: string
-          format: uri
-          description: URL to redirect customers after successful payment
-          example: https://example.com/success?session_id=checkout_QdEpFhdSrG4Y3DnfsdqsH
+          description: |
+            URL to redirect customers after successful payment.
+
+            You may include the literal `{CHECKOUT_ID}` placeholder anywhere in the
+            URL (e.g. `https://example.com/return?checkout_id={CHECKOUT_ID}`). Vatly
+            substitutes it with this checkout's id at creation time, so the host can
+            learn the checkout id on the redirect back without any server-side token
+            store. Only `{CHECKOUT_ID}` is supported.
+          example: https://example.com/return?checkout_id={CHECKOUT_ID}
         redirectUrlCanceled:
           type: string
-          format: uri
-          description: URL to redirect customers if they cancel the checkout
-          example: https://example.com/canceled
+          description: |
+            URL to redirect customers if they cancel the checkout.
+
+            Supports the same `{CHECKOUT_ID}` placeholder as `redirectUrlSuccess`.
+          example: https://example.com/canceled?checkout_id={CHECKOUT_ID}
         customerId:
           type:
             - string
@@ -3223,6 +4252,7 @@ components:
         - createdAt
         - metadata
         - links
+      additionalProperties: false
       properties:
         id:
           type: string
@@ -3240,7 +4270,11 @@ components:
         email:
           type: string
           format: email
-          description: Customer's email address
+          description: |
+            Customer's email address.
+            Internationalized domains are stored and returned in their
+            Punycode (ASCII) form per RFC 3492 — e.g. `user@xn--mller-kva.de`.
+            Convert back to Unicode for display in your own UI.
           example: customer@example.com
         createdAt:
           type: string
@@ -3254,6 +4288,7 @@ components:
           description: HATEOAS links to related resources
           required:
             - self
+          additionalProperties: false
           properties:
             self:
               $ref: '#/components/schemas/Link'
@@ -3263,6 +4298,7 @@ components:
       description: Request body for creating a new customer
       required:
         - email
+      additionalProperties: false
       properties:
         email:
           type: string
@@ -3270,6 +4306,10 @@ components:
           description: |
             Customer's email address.
             Must be unique within the merchant's account for the given testmode.
+            Internationalized domains must be submitted in their Punycode (ASCII)
+            form per RFC 3492 — e.g. `user@xn--mller-kva.de` instead of
+            `user@müller.de`. Submitting a Unicode domain returns a validation
+            error.
           example: customer@example.com
         metadata:
           $ref: '#/components/schemas/Metadata'
@@ -3288,6 +4328,7 @@ components:
         - status
         - createdAt
         - links
+      additionalProperties: false
       properties:
         id:
           type: string
@@ -3336,6 +4377,7 @@ components:
           description: HATEOAS links to related resources
           required:
             - self
+          additionalProperties: false
           properties:
             self:
               $ref: '#/components/schemas/Link'
@@ -3357,6 +4399,7 @@ components:
         - status
         - createdAt
         - links
+      additionalProperties: false
       properties:
         id:
           type: string
@@ -3426,6 +4469,7 @@ components:
           description: HATEOAS links to related resources
           required:
             - self
+          additionalProperties: false
           properties:
             self:
               $ref: '#/components/schemas/Link'
@@ -3438,16 +4482,20 @@ components:
       required:
         - id
         - resource
+        - customerId
         - testmode
         - metadata
         - createdAt
         - status
         - total
         - subtotal
+        - reversedSubtotal
+        - refundableSubtotal
         - taxSummary
         - lines
         - customerDetails
         - links
+      additionalProperties: false
       properties:
         id:
           type: string
@@ -3462,7 +4510,7 @@ components:
           type:
             - string
             - 'null'
-          description: ID of the customer who made this purchase. Only present when a customer is associated.
+          description: ID of the customer who made this purchase. Always present; `null` for orders with no associated customer.
           example: customer_Lp3mNvBxKw7RjTgYcZaE
         testmode:
           type: boolean
@@ -3511,6 +4559,12 @@ components:
         subtotal:
           $ref: '#/components/schemas/Money'
           description: Subtotal amount before taxes
+        reversedSubtotal:
+          $ref: '#/components/schemas/Money'
+          description: Amount of the captured payment returned to the customer, before taxes, via refund or chargeback (settled)
+        refundableSubtotal:
+          $ref: '#/components/schemas/Money'
+          description: Remaining amount that can still be refunded, before taxes.
         taxSummary:
           type: array
           description: Tax breakdown by rate
@@ -3529,19 +4583,23 @@ components:
           description: HATEOAS links to related resources
           required:
             - self
+            - customer
+            - customerInvoice
+          additionalProperties: false
           properties:
             self:
               allOf:
                 - $ref: '#/components/schemas/Link'
               description: Link to this order resource
             customer:
-              allOf:
+              oneOf:
                 - $ref: '#/components/schemas/Link'
-              description: Link to the customer who made this purchase. Only present when a customer is associated.
+                - type: 'null'
+              description: Link to the customer who made this purchase. Null for orders with no associated customer.
             customerInvoice:
               allOf:
                 - $ref: '#/components/schemas/Link'
-              description: Link to the customer-facing invoice in the customer portal
+              description: Link to the customer-facing invoice page in the customer portal (text/html)
     OrderLine:
       type: object
       description: A line item in an order
@@ -3554,6 +4612,7 @@ components:
         - total
         - subtotal
         - taxes
+      additionalProperties: false
       properties:
         id:
           type: string
@@ -3587,12 +4646,32 @@ components:
           description: Tax breakdown by rate for this line
           items:
             $ref: '#/components/schemas/TaxSummaryItem'
-    AddressUpdateLink:
+        productType:
+          type:
+            - string
+            - 'null'
+          enum:
+            - one_off_product
+            - subscription_plan
+            - subscription
+            - billing_details_verification
+            - auth_request_product
+            - null
+          description: The product type this line links to; null when the line has no product link.
+          example: subscription
+        productId:
+          type:
+            - string
+            - 'null'
+          description: The linked product's id; for a `subscription` line this is the public `subscription_…` id.
+          example: subscription_Hn5xWqVfKm8RjTgYbUcP
+    InvoiceUpdateLink:
       type: object
-      description: A signed URL to update order billing address
+      description: A signed URL for the customer to update invoice details (billing address, VAT number, company name)
       required:
         - href
         - type
+      additionalProperties: false
       properties:
         href:
           type: string
@@ -3614,6 +4693,7 @@ components:
       required:
         - id
         - resource
+        - orderId
         - customerId
         - testmode
         - createdAt
@@ -3624,6 +4704,7 @@ components:
         - taxSummary
         - lines
         - links
+      additionalProperties: false
       properties:
         id:
           type: string
@@ -3639,8 +4720,9 @@ components:
             - string
             - 'null'
           description: |
-            ID of the credit note order created for this refund.
-            Only present after the refund is processed.
+            ID of the credit note order created for this refund. Always present in
+            the payload; `null` until the refund is processed, then set to the
+            credit-note order id.
           example: order_Vr8kQdFhSrG4Y3DnfsdqH
         customerId:
           type: string
@@ -3699,6 +4781,8 @@ components:
           required:
             - self
             - originalOrder
+            - order
+          additionalProperties: false
           properties:
             self:
               allOf:
@@ -3712,7 +4796,7 @@ components:
               oneOf:
                 - $ref: '#/components/schemas/Link'
                 - type: 'null'
-              description: Link to the credit note order (if created)
+              description: Link to the credit note order. Always present; `null` until the credit-note order is created.
     RefundLine:
       type: object
       description: A line item in a refund
@@ -3725,6 +4809,7 @@ components:
         - total
         - subtotal
         - taxes
+      additionalProperties: false
       properties:
         id:
           type: string
@@ -3763,6 +4848,7 @@ components:
       description: Request body for creating a partial refund
       required:
         - items
+      additionalProperties: false
       properties:
         items:
           type: array
@@ -3781,6 +4867,7 @@ components:
     CreateFullRefundRequest:
       type: object
       description: Request body for creating a full refund
+      additionalProperties: false
       properties:
         metadata:
           $ref: '#/components/schemas/Metadata'
@@ -3792,13 +4879,20 @@ components:
       required:
         - id
         - resource
+        - customerId
         - testmode
         - createdAt
+        - status
         - amount
         - settlementAmount
+        - total
+        - subtotal
+        - taxSummary
         - reason
         - originalOrderId
+        - orderId
         - links
+      additionalProperties: false
       properties:
         id:
           type: string
@@ -3809,6 +4903,10 @@ components:
           description: Resource type identifier
           const: chargeback
           example: chargeback
+        customerId:
+          type: string
+          description: ID of the customer the chargeback was raised against
+          example: customer_Lp3mNvBxKw7RjTgYcZaE
         testmode:
           type: boolean
           description: Whether this chargeback is in test mode
@@ -3818,6 +4916,24 @@ components:
           format: date-time
           description: When this chargeback was created (ISO 8601 format)
           example: '2024-01-15T10:30:00Z'
+        status:
+          type: string
+          description: |
+            Current status of the chargeback dispute:
+            - `pending` - Dispute received, awaiting action
+            - `accepted` - Merchant accepted the dispute
+            - `rejected` - Dispute rejected
+            - `evidence_submitted` - Evidence submitted, awaiting decision
+            - `won` - Dispute resolved in the merchant's favor
+            - `lost` - Dispute resolved in the customer's favor
+          enum:
+            - pending
+            - accepted
+            - rejected
+            - evidence_submitted
+            - won
+            - lost
+          example: pending
         amount:
           $ref: '#/components/schemas/Money'
           description: Amount of the chargeback
@@ -3826,6 +4942,17 @@ components:
           description: |
             Amount that was deducted from the merchant's settlement.
             May differ from `amount` due to currency conversion or fees.
+        total:
+          $ref: '#/components/schemas/Money'
+          description: Total chargeback amount including taxes
+        subtotal:
+          $ref: '#/components/schemas/Money'
+          description: Chargeback subtotal before taxes
+        taxSummary:
+          type: array
+          description: Tax breakdown by rate for the chargeback
+          items:
+            $ref: '#/components/schemas/TaxSummaryItem'
         reason:
           type: string
           description: |
@@ -3846,8 +4973,9 @@ components:
             - string
             - 'null'
           description: |
-            ID of the credit note order created for this chargeback.
-            Only present after the chargeback is processed.
+            ID of the credit note order created for this chargeback. Always present
+            in the payload; `null` until the chargeback is processed, then set to the
+            credit-note order id.
           example: order_Rk5pQrSvWm8NjLhYbUcP
         links:
           type: object
@@ -3855,6 +4983,8 @@ components:
           required:
             - self
             - originalOrder
+            - order
+          additionalProperties: false
           properties:
             self:
               allOf:
@@ -3868,12 +4998,17 @@ components:
               oneOf:
                 - $ref: '#/components/schemas/Link'
                 - type: 'null'
-              description: Link to the credit note order (if created)
+              description: Link to the credit note order. Always present; `null` until the credit-note order is created.
     WebhookEvent:
       type: object
       description: |
-        A webhook event represents a domain event that was sent to a webhook endpoint.
-        Each event contains the full resource payload at the time the event occurred.
+        A persisted webhook event — the record returned by `GET /webhook-events/{eventId}`.
+        It captures a domain event that was delivered to your endpoint, including the full
+        resource payload at the time the event occurred.
+
+        This is the *stored* resource. For the shape Vatly POSTs to your endpoint on each
+        live delivery (which additionally includes the `webhook.setup` verification call),
+        see `WebhookDelivery`.
       required:
         - id
         - resource
@@ -3881,7 +5016,10 @@ components:
         - entityType
         - entityId
         - object
+        - createdAt
+        - testmode
         - links
+      additionalProperties: false
       properties:
         id:
           type: string
@@ -3895,11 +5033,12 @@ components:
         eventName:
           type: string
           description: |
-            Name of the event that triggered this webhook. Possible values:
+            Name of the event that triggered this webhook:
             - `order.paid` - Order payment was successful
             - `order.canceled` - Order was canceled
             - `order.chargeback_received` - Chargeback was received for an order
             - `order.chargeback_reversed` - Chargeback was reversed
+            - `order.payment_failed` - A payment failed and a dunning process was initiated for the order
             - `refund.completed` - Refund was processed successfully
             - `refund.failed` - Refund processing failed
             - `refund.canceled` - Refund was canceled
@@ -3907,7 +5046,37 @@ components:
             - `subscription.canceled_immediately` - Subscription was canceled immediately
             - `subscription.canceled_with_grace_period` - Subscription was canceled with a grace period
             - `subscription.cancellation_grace_period_completed` - Subscription grace period ended
+            - `subscription.resumed` - A canceled subscription was resumed during its grace period
+            - `subscription.billing_updated` - A subscription's billing details changed; in practice today the mandate (payment method on file), e.g. to refresh the masked payment method identifier shown to the customer
+            - `checkout.paid` - Checkout was paid successfully
+            - `checkout.failed` - Checkout payment failed
+            - `checkout.canceled` - Checkout was canceled
             - `checkout.expired` - Checkout session expired
+
+            `webhook.setup` is intentionally absent: the verification handshake is not
+            persisted and so never appears on this resource (see `WebhookDelivery`).
+
+            This list is kept in sync with the webhook transformer registry by
+            `php artisan openapi:audit-webhook-drift`.
+          enum:
+            - order.paid
+            - order.canceled
+            - order.chargeback_received
+            - order.chargeback_reversed
+            - order.payment_failed
+            - refund.completed
+            - refund.failed
+            - refund.canceled
+            - subscription.started
+            - subscription.canceled_immediately
+            - subscription.canceled_with_grace_period
+            - subscription.cancellation_grace_period_completed
+            - subscription.resumed
+            - subscription.billing_updated
+            - checkout.paid
+            - checkout.failed
+            - checkout.canceled
+            - checkout.expired
           example: order.paid
         entityType:
           type: string
@@ -3918,15 +5087,49 @@ components:
           description: ID of the resource this event relates to
           example: order_Hn5xWqVfKm8RjTgYbUcP
         object:
-          type: object
           description: |
-            The full resource payload at the time of the event.
-            The shape depends on the `entityType` (e.g., Order, Refund, Chargeback, Subscription, Checkout).
+            The full resource payload at the time of the event, serialized identically
+            to the corresponding REST resource. The concrete shape is selected by the
+            payload's own `resource` field (the discriminator):
+              - `order.paid`, `order.canceled`, `order.payment_failed` → Order
+              - `order.chargeback_received`, `order.chargeback_reversed` → Chargeback
+              - `refund.*` → Refund
+              - `subscription.*` → Subscription
+              - `checkout.*` → Checkout
+
+            Note `object.resource` may differ from `entityType`: chargeback events carry
+            `entityType: order` (the order the chargeback belongs to) but a Chargeback object.
+          oneOf:
+            - $ref: '#/components/schemas/Order'
+            - $ref: '#/components/schemas/Chargeback'
+            - $ref: '#/components/schemas/Refund'
+            - $ref: '#/components/schemas/Subscription'
+            - $ref: '#/components/schemas/Checkout'
+          discriminator:
+            propertyName: resource
+            mapping:
+              order: '#/components/schemas/Order'
+              chargeback: '#/components/schemas/Chargeback'
+              refund: '#/components/schemas/Refund'
+              subscription: '#/components/schemas/Subscription'
+              checkout: '#/components/schemas/Checkout'
+        createdAt:
+          type: string
+          format: date-time
+          description: ISO 8601 timestamp of when the webhook event was created.
+          example: '2026-05-21T14:32:08+00:00'
+        testmode:
+          type: boolean
+          description: |
+            Whether the event originated from a test-mode resource.
+            `true` for events created with a `test_` prefixed token, `false` for live events.
+          example: false
         links:
           type: object
-          description: HATEOAS links to related resources
+          description: HATEOAS links to related resources. Always present on the persisted event.
           required:
             - self
+          additionalProperties: false
           properties:
             self:
               allOf:
@@ -3941,6 +5144,7 @@ components:
         - id
         - resource
         - customerId
+        - subscriptionPlanId
         - testmode
         - name
         - description
@@ -3950,7 +5154,16 @@ components:
         - interval
         - intervalCount
         - status
+        - mandate
+        - startedAt
+        - endedAt
+        - canceledAt
+        - renewedAt
+        - renewedUntil
+        - nextRenewalAt
+        - trialUntil
         - links
+      additionalProperties: false
       properties:
         id:
           type: string
@@ -4024,6 +5237,15 @@ components:
             - paused
             - canceled
           example: active
+        mandate:
+          oneOf:
+            - $ref: '#/components/schemas/Mandate'
+            - type: 'null'
+          description: |
+            Payment method on file for this subscription, as an inline summary
+            intended for billing-portal rendering ("Visa ending in 4242"). May
+            be `null` when the subscription has no mandate yet (e.g. ended /
+            canceled-before-payment states).
         startedAt:
           type:
             - string
@@ -4037,7 +5259,7 @@ components:
             - 'null'
           format: date-time
           description: When the subscription ended (ISO 8601 format)
-        cancelledAt:
+        canceledAt:
           type:
             - string
             - 'null'
@@ -4080,6 +5302,7 @@ components:
           required:
             - self
             - customer
+          additionalProperties: false
           properties:
             self:
               allOf:
@@ -4094,6 +5317,7 @@ components:
       description: |
         Request body for updating a subscription.
         At least one of `subscriptionPlanId` or `quantity` must be provided.
+      additionalProperties: false
       properties:
         subscriptionPlanId:
           type: string
@@ -4136,9 +5360,23 @@ components:
             - 'null'
           format: date
           description: |
-            Reset the billing anchor to this date.
-            Cannot be combined with `trialUntil`.
+            Set the billing anchor to a specific calendar date (YYYY-MM-DD,
+            interpreted in UTC). The new billing cycle is recalculated around
+            this anchor. Date-only by design — the anchor identifies a day,
+            not an instant, so daylight-saving transitions don't shift it.
+            Cannot be combined with `resetAnchor`.
           example: '2024-02-01'
+        resetAnchor:
+          type: boolean
+          description: |
+            Reset the billing anchor to "now" — the moment the update
+            is processed becomes the new cycle anchor, and future
+            renewals align to it. Useful when a customer upgrades
+            mid-cycle and you want the new plan's billing period to
+            start fresh from today.
+            Cannot be combined with `anchor`.
+          default: false
+          example: true
         trialUntil:
           type:
             - string
@@ -4154,6 +5392,7 @@ components:
       required:
         - redirectUrlSuccess
         - redirectUrlCanceled
+      additionalProperties: false
       properties:
         redirectUrlSuccess:
           type: string
@@ -4172,6 +5411,53 @@ components:
           description: |
             Pre-fill billing address fields.
             Customer can modify these values in the hosted form.
+    Mandate:
+      type: object
+      description: |
+        A mandate represents an authorization to charge a customer's payment method
+        on a recurring basis (cards, SEPA Direct Debit, PayPal, Bacs).
+
+        This shape is the inline summary exposed on subscriptions — enough to
+        render "Visa ending in 4242" in a billing portal without an extra round
+        trip. A dedicated `/v1/mandates/{id}` endpoint with richer detail (status,
+        validity timestamps, billing snapshot) is on the roadmap; fields here are
+        forward-compatible additions to that future schema.
+      required:
+        - method
+        - maskedIdentifier
+      additionalProperties: false
+      properties:
+        method:
+          type: string
+          description: |
+            Normalized payment method category, provider-agnostic:
+            - `card` — credit/debit card (incl. Apple Pay, Google Pay wallets)
+            - `sepa_debit` — SEPA Direct Debit (incl. iDEAL, Bancontact, KBC and
+              other rail aliases that settle into a directdebit mandate)
+            - `paypal` — PayPal billing agreement
+            - `bacs_debit` — UK Bacs Direct Debit
+          enum:
+            - card
+            - sepa_debit
+            - paypal
+            - bacs_debit
+          example: card
+        maskedIdentifier:
+          type:
+            - string
+            - 'null'
+          description: |
+            Customer-facing masked identifier for the payment method on file:
+            the last 4 of a card (`"4242"`), a masked IBAN (`"NL91****4300"`),
+            a masked PayPal email (`"j***@example.com"`), or last 4 of a Bacs
+            account (`"****5678"`).
+
+            May briefly be `null` for freshly-subscribed customers when the
+            underlying authorization event doesn't carry the masked identifier
+            inline — in that case it lands on a follow-up sync (runs at most
+            every 5 minutes) and the field updates from `null` to the resolved
+            value once the sync completes.
+          example: '4242'
     TaxSummaryRate:
       type: object
       description: Simplified tax rate information
@@ -4210,6 +5496,7 @@ components:
       required:
         - itemId
         - amount
+      additionalProperties: false
       properties:
         itemId:
           type: string
@@ -4232,3 +5519,182 @@ components:
             - 'null'
           description: Additional description line for the refund
           example: 'Ticket #12345'
+    Webhook:
+      type: object
+      description: |
+        A registered webhook endpoint configuration — the subject of a `webhook.setup`
+        verification call. Never includes the signing secret.
+      required:
+        - resource
+        - id
+        - url
+        - testmode
+      additionalProperties: false
+      properties:
+        resource:
+          type: string
+          const: webhook
+          example: webhook
+        id:
+          type: string
+          description: The webhook endpoint identifier.
+          example: webhook_QdEpFhdSrG4Y3DnfsdqsH
+        url:
+          type: string
+          format: uri
+          description: The endpoint the verification call was sent to.
+          example: https://merchant.example/webhooks/vatly
+        testmode:
+          type: boolean
+          example: true
+    WebhookDelivery:
+      type: object
+      description: |
+        The envelope Vatly POSTs to your configured webhook endpoint for each delivery.
+
+        Identical to the persisted `WebhookEvent`, with two differences that exist only on
+        the wire:
+          - it additionally covers the `webhook.setup` verification call (`entityType`
+            `webhook`, `object` is the secret-free endpoint config), and
+          - that setup call is not persisted and omits `links`, so `links` is not required
+            on a delivery.
+
+        Every delivery is signed: the `Vatly-Signature` header carries an HMAC-SHA256 of
+        the raw body and `Vatly-Event-Id` carries a retry-stable dedup key (see the
+        operation parameters).
+      required:
+        - id
+        - resource
+        - eventName
+        - entityType
+        - entityId
+        - object
+        - createdAt
+        - testmode
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          description: Unique identifier for the webhook event
+          example: webhook_event_Qk8pRtSvWm2NjLhYcZaE
+        resource:
+          type: string
+          description: Resource type identifier
+          const: webhook_event
+          example: webhook_event
+        eventName:
+          type: string
+          description: |
+            Name of the event that triggered this webhook:
+            - `order.paid` - Order payment was successful
+            - `order.canceled` - Order was canceled
+            - `order.chargeback_received` - Chargeback was received for an order
+            - `order.chargeback_reversed` - Chargeback was reversed
+            - `order.payment_failed` - A payment failed and a dunning process was initiated for the order
+            - `refund.completed` - Refund was processed successfully
+            - `refund.failed` - Refund processing failed
+            - `refund.canceled` - Refund was canceled
+            - `subscription.started` - Subscription was started
+            - `subscription.canceled_immediately` - Subscription was canceled immediately
+            - `subscription.canceled_with_grace_period` - Subscription was canceled with a grace period
+            - `subscription.cancellation_grace_period_completed` - Subscription grace period ended
+            - `subscription.resumed` - A canceled subscription was resumed during its grace period
+            - `subscription.billing_updated` - A subscription's billing details changed; in practice today the mandate (payment method on file), e.g. to refresh the masked payment method identifier shown to the customer
+            - `checkout.paid` - Checkout was paid successfully
+            - `checkout.failed` - Checkout payment failed
+            - `checkout.canceled` - Checkout was canceled
+            - `checkout.expired` - Checkout session expired
+            - `webhook.setup` - Verification call sent when an endpoint is registered or its URL changes (`entityType` is `webhook`)
+
+            This list is the single source of truth for SDK generators and is kept in
+            sync with the webhook transformer registry by `php artisan openapi:audit-webhook-drift`.
+          enum:
+            - order.paid
+            - order.canceled
+            - order.chargeback_received
+            - order.chargeback_reversed
+            - order.payment_failed
+            - refund.completed
+            - refund.failed
+            - refund.canceled
+            - subscription.started
+            - subscription.canceled_immediately
+            - subscription.canceled_with_grace_period
+            - subscription.cancellation_grace_period_completed
+            - subscription.resumed
+            - subscription.billing_updated
+            - checkout.paid
+            - checkout.failed
+            - checkout.canceled
+            - checkout.expired
+            - webhook.setup
+          example: order.paid
+        entityType:
+          type: string
+          description: Type of the resource this event relates to
+          example: order
+        entityId:
+          type: string
+          description: ID of the resource this event relates to
+          example: order_Hn5xWqVfKm8RjTgYbUcP
+        object:
+          description: |
+            The full resource payload at the time of the event, serialized identically
+            to the corresponding REST resource. The concrete shape is selected by the
+            payload's own `resource` field (the discriminator):
+              - `order.paid`, `order.canceled`, `order.payment_failed` → Order
+              - `order.chargeback_received`, `order.chargeback_reversed` → Chargeback
+              - `refund.*` → Refund
+              - `subscription.*` → Subscription
+              - `checkout.*` → Checkout
+              - `webhook.setup` → Webhook (the endpoint config; verification handshake)
+
+            Note `object.resource` may differ from `entityType`: chargeback events carry
+            `entityType: order` (the order the chargeback belongs to) but a Chargeback object.
+          oneOf:
+            - $ref: '#/components/schemas/Order'
+            - $ref: '#/components/schemas/Chargeback'
+            - $ref: '#/components/schemas/Refund'
+            - $ref: '#/components/schemas/Subscription'
+            - $ref: '#/components/schemas/Checkout'
+            - $ref: '#/components/schemas/Webhook'
+          discriminator:
+            propertyName: resource
+            mapping:
+              order: '#/components/schemas/Order'
+              chargeback: '#/components/schemas/Chargeback'
+              refund: '#/components/schemas/Refund'
+              subscription: '#/components/schemas/Subscription'
+              checkout: '#/components/schemas/Checkout'
+              webhook: '#/components/schemas/Webhook'
+        createdAt:
+          type: string
+          format: date-time
+          description: ISO 8601 timestamp of when the webhook event was created.
+          example: '2026-05-21T14:32:08+00:00'
+        testmode:
+          type: boolean
+          description: |
+            Whether the event originated from a test-mode resource.
+            `true` for events created with a `test_` prefixed token, `false` for live events.
+          example: false
+        links:
+          type: object
+          description: |
+            HATEOAS links to related resources. Present on event deliveries; omitted on
+            the `webhook.setup` verification call, which is not a persisted resource.
+          required:
+            - self
+          additionalProperties: false
+          properties:
+            self:
+              allOf:
+                - $ref: '#/components/schemas/Link'
+              description: Link to this webhook event resource
+  requestBodies:
+    WebhookDelivery:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/WebhookDelivery'

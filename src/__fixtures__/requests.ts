@@ -53,6 +53,7 @@ export function anUpdateSubscriptionRequest(
     prorate: true,
     applyImmediately: false,
     invoiceImmediately: false,
+    resetAnchor: false,
     ...overrides,
   };
 }

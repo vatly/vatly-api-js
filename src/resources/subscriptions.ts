@@ -57,16 +57,20 @@ export class SubscriptionsResource extends BaseResource {
     );
   }
 
-  /** PATCH /subscriptions/{id}/update-billing — note: PATCH, not POST. */
-  updateBilling(
+  /**
+   * POST /subscriptions/{id}/billing-update-link
+   * Generates a signed, hosted URL the customer can use to update their billing
+   * details (billing address, VAT number, company name).
+   */
+  createBillingUpdateLink(
     subscriptionId: string,
     body: UpdateSubscriptionBillingRequest,
     opts?: RequestOptions,
   ): Promise<Subscription> {
     return this.request<Subscription>(
       {
-        method: "PATCH",
-        path: `/subscriptions/${encodeURIComponent(subscriptionId)}/update-billing`,
+        method: "POST",
+        path: `/subscriptions/${encodeURIComponent(subscriptionId)}/billing-update-link`,
         body,
       },
       opts,

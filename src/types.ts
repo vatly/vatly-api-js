@@ -18,7 +18,7 @@ export type SubscriptionPlan = Schemas["SubscriptionPlan"];
 
 export type Order = Schemas["Order"];
 export type OrderLine = Schemas["OrderLine"];
-export type AddressUpdateLink = Schemas["AddressUpdateLink"];
+export type InvoiceUpdateLink = Schemas["InvoiceUpdateLink"];
 
 export type Refund = Schemas["Refund"];
 export type RefundLine = Schemas["RefundLine"];
