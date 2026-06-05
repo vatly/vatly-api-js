@@ -60,4 +60,6 @@ export {
   type VerifyOptions,
 } from "./webhooks/verify.js";
 
+export * from "./webhooks/events.js";
+
 export * from "./types.js";

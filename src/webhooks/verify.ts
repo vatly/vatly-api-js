@@ -30,7 +30,7 @@
  */
 
 import { VatlyInvalidSignatureError } from "../errors.js";
-import type { WebhookEvent } from "../types.js";
+import type { WebhookDelivery } from "../types.js";
 
 export type RawBody = string | ArrayBuffer | ArrayBufferView | Uint8Array;
 
@@ -163,7 +163,12 @@ export async function isValidWebhookSignature(
 }
 
 /**
- * Verify and JSON-parse to a typed WebhookEvent.
+ * Verify and JSON-parse to a typed `WebhookDelivery`.
+ *
+ * The return type is `WebhookDelivery` (the wire envelope), NOT the persisted
+ * `WebhookEvent`: a real-time delivery may be the `webhook.setup` verification
+ * handshake and may omit `links`. Switch on `event.eventName` — `"webhook.setup"`
+ * is a member of the union so the type system prompts you to handle (or ack) it.
  *
  * IMPORTANT: pass the RAW request body (string or bytes). Reserialising the
  * JSON gives different bytes and breaks the HMAC.
@@ -173,12 +178,12 @@ export async function constructEvent(
   signatureHeader: string | null | undefined,
   secret: string | readonly string[],
   options?: VerifyOptions,
-): Promise<WebhookEvent> {
+): Promise<WebhookDelivery> {
   await verifyWebhookSignature(rawBody, signatureHeader, secret, options);
   const text =
     typeof rawBody === "string" ? rawBody : new TextDecoder().decode(toUint8Array(rawBody));
   try {
-    return JSON.parse(text) as WebhookEvent;
+    return JSON.parse(text) as WebhookDelivery;
   } catch {
     throw new VatlyInvalidSignatureError("Webhook body is not valid JSON.");
   }
@@ -195,7 +200,7 @@ export async function constructEventFromRequest(
   request: Request,
   secret: string | readonly string[],
   options?: VerifyOptions,
-): Promise<WebhookEvent> {
+): Promise<WebhookDelivery> {
   const rawBody = await request.text();
   const signature = request.headers.get(VATLY_SIGNATURE_HEADER);
   return constructEvent(rawBody, signature, secret, options);

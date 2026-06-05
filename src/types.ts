@@ -32,7 +32,23 @@ export type Subscription = Schemas["Subscription"];
 export type UpdateSubscriptionRequest = Schemas["UpdateSubscriptionRequest"];
 export type UpdateSubscriptionBillingRequest = Schemas["UpdateSubscriptionBillingRequest"];
 
+/**
+ * The persisted webhook event resource, as returned by `GET /webhook-events`.
+ * Requires `links` and never carries the `webhook.setup` verification call.
+ * For the envelope Vatly POSTs to your endpoint, use {@link WebhookDelivery}.
+ */
 export type WebhookEvent = Schemas["WebhookEvent"];
+
+/**
+ * The envelope Vatly POSTs to your configured webhook endpoint for each
+ * delivery — the type returned by `constructEvent` / `constructEventFromRequest`.
+ * Differs from the persisted {@link WebhookEvent} on the wire: it additionally
+ * covers the `webhook.setup` verification call (`object` is a {@link Webhook}
+ * endpoint config) and `links` is optional (the setup call is not persisted).
+ */
+export type WebhookDelivery = Schemas["WebhookDelivery"];
+
+export type Webhook = Schemas["Webhook"];
 
 export type BillingAddress = Schemas["BillingAddress"];
 export type BillingDetails = Schemas["BillingDetails"];

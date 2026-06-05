@@ -12,4 +12,5 @@ export {
   type VerifyOptions,
 } from "./verify.js";
 export { VatlyInvalidSignatureError } from "../errors.js";
-export type { WebhookEvent } from "../types.js";
+export type { Webhook, WebhookDelivery, WebhookEvent } from "../types.js";
+export * from "./events.js";

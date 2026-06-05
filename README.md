@@ -200,15 +200,57 @@ Vatly-Event-Id:  webhook_event_Qk8pRtSvWm2NjLhYcZaE
 - The SDK rejects signatures where `|now − t| > 300` seconds by default
   (5-minute clock-skew tolerance, matches Stripe's SDK default).
 
-One-liner against a Fetch `Request`:
+### Verify + process in one step
+
+`constructWebhookEvent` (and `…FromRequest`) verifies the signature and returns
+a **discriminated event**: switch on `event.eventName` and `event.object`
+narrows to the exact resource — no casts, no follow-up API call (Vatly sends
+fat, signed payloads, so `object` is the full `GET /…/{id}` snapshot).
+
+```ts
+import { constructWebhookEventFromRequest } from "@vatly/sdk/webhooks";
+
+export default async function handler(request: Request) {
+  const event = await constructWebhookEventFromRequest(
+    request,
+    process.env.VATLY_WEBHOOK_SECRET!,
+  );
+
+  switch (event.eventName) {
+    case "order.paid":
+      event.object.total;     // Money — typed as Order, no cast
+      break;
+    case "subscription.billing_updated":
+      event.object.mandate;   // typed as Subscription
+      break;
+    case "webhook.setup":
+      return new Response("ok"); // verification handshake — just acknowledge it
+  }
+  return new Response("ok");
+}
+```
+
+When you register an endpoint or change its URL, Vatly sends a `webhook.setup`
+verification call — a signed delivery like any other; acknowledge it with a 2xx
+and take no further action. The event union is closed and kept in lock-step with
+the API: if vatlify adds an event, regenerating the spec triggers a compile
+error until it's mapped, so your `switch` is never silently incomplete. Event
+names are also available as constants (`WebhookEventName.OrderPaid`).
+
+### Lower-level: verify only
+
+If you'd rather verify and parse without the discriminated narrowing — e.g. to
+forward the raw envelope elsewhere — `constructEvent*` returns the
+`WebhookDelivery` wire type as-is (call `toWebhookEvent(delivery)` later to
+narrow). `WebhookDelivery` is the envelope Vatly POSTs you, not the persisted
+`WebhookEvent` returned by `GET /webhook-events`: it covers `webhook.setup` and
+makes `links` optional.
 
 ```ts
 import { constructEventFromRequest } from "@vatly/sdk/webhooks";
 
-export default async function handler(request: Request) {
-  const event = await constructEventFromRequest(request, process.env.VATLY_WEBHOOK_SECRET!);
-  // event is a typed WebhookEvent — switch on event.eventName
-}
+const delivery = await constructEventFromRequest(request, process.env.VATLY_WEBHOOK_SECRET!);
+// delivery is a typed WebhookDelivery — switch on delivery.eventName
 ```
 
 Manual steps when you need more control (tighter clock-skew tolerance,
