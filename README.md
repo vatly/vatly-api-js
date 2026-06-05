@@ -1,3 +1,5 @@
+![Vatly SDK for JavaScript & TypeScript](art/banner.png)
+
 # @vatly/sdk
 
 Official TypeScript SDK for the [Vatly](https://vatly.com) Merchant of Record API.
