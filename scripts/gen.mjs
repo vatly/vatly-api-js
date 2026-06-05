@@ -16,6 +16,10 @@ const root = resolve(__dirname, "..");
 const specDir = resolve(root, "spec");
 const rawPath = resolve(specDir, "openapi.yaml");
 const patchedPath = resolve(specDir, "openapi.3.1.yaml");
+// A verbatim copy of the fetched spec at the repo root, kept in sync on every
+// `pnpm gen` run. It's the canonical reference for humans and AI tools reading
+// the API contract without digging into spec/ or src/generated/.
+const rootRefPath = resolve(root, "openapi.yaml");
 const outDir = resolve(root, "src/generated");
 const outFile = resolve(outDir, "schema.ts");
 
@@ -30,6 +34,7 @@ if (!res.ok) {
 }
 const yaml = await res.text();
 writeFileSync(rawPath, yaml);
+writeFileSync(rootRefPath, yaml);
 
 // Only patch required for openapi-typescript@7 + @redocly/openapi-core@1.34 is the version
 // stamp. The spec uses no 3.2-only constructs at the time of writing — verified by grep

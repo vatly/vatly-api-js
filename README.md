@@ -364,6 +364,11 @@ canonical spec on GitHub:
 pnpm gen
 ```
 
+`pnpm gen` also writes a verbatim copy of the fetched spec to
+[`openapi.yaml`](openapi.yaml) in the repo root — the human- and AI-readable
+reference for the API contract, kept in sync on every run. (A second copy lives
+under `spec/` as the generator's working input; both are regenerated together.)
+
 The script down-converts `openapi: 3.2.0` → `3.1.0` because the current
 `openapi-typescript` + `@redocly/openapi-core` toolchain doesn't yet support
 3.2.0 (it throws `Unsupported OpenAPI version: 3.2.0`). The spec uses no
