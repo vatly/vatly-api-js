@@ -238,6 +238,25 @@ describe("webhook verify — v1 timestamped signature", () => {
         VatlyInvalidSignatureError,
       );
     });
+
+    it("verifies the `webhook.setup` verification delivery (typed as WebhookDelivery, no links)", async () => {
+      // The setup handshake is a signed delivery like any other, but it is not a
+      // persisted WebhookEvent: `eventName` is `webhook.setup` and `links` is absent.
+      const setupBody = JSON.stringify({
+        id: "webhook_event_setup",
+        resource: "webhook_event",
+        eventName: "webhook.setup",
+        entityType: "webhook",
+        entityId: "webhook_1",
+        object: { resource: "webhook", id: "webhook_1", url: "https://x.example", testmode: true },
+        createdAt: "2026-05-21T14:32:08+00:00",
+        testmode: true,
+      });
+      const header = await signedHeader(FROZEN_T, setupBody);
+      const event = await constructEvent(setupBody, header, SECRET, { now: FROZEN_NOW });
+      expect(event.eventName).toBe("webhook.setup");
+      expect(event.links).toBeUndefined();
+    });
   });
 
   describe("constructEventFromRequest", () => {
