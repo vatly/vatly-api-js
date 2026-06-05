@@ -1,5 +1,7 @@
 // Shared helpers for tests. Not part of the public SDK surface.
 
+import { VatlyClient } from "./client.js";
+
 export interface MockCall {
   url: string;
   method: string;
@@ -73,4 +75,18 @@ export function makeFetchSequence(responses: MockResponseInit[]) {
     });
   };
   return { fetch: fetchFn, calls };
+}
+
+/**
+ * Build a `VatlyClient` wired to a recording mock fetch. Returns the client and
+ * the recorded `calls` array so tests can assert on method/url/headers/body.
+ */
+export function makeTestClient(responses: MockResponseInit[]) {
+  const { fetch, calls } = makeFetchSequence(responses);
+  const client = new VatlyClient({
+    apiKey: "test_abcdefghij0123456789",
+    baseUrl: "https://api.example.com/v1",
+    fetch,
+  });
+  return { client, calls };
 }
