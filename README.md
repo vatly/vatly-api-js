@@ -45,6 +45,9 @@ for await (const customer of vatly.customers.listAll({ limit: 100 })) {
 }
 ```
 
+Runnable snippets — basic CRUD and a Next.js webhook handler — live in
+[`examples/`](examples/).
+
 ## Authentication & modes
 
 API keys must match `^(live|test)_[\w|]{18,}$` — a `live_` or `test_` prefix
