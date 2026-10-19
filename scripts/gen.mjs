@@ -41,7 +41,7 @@ writeFileSync(rootRefPath, yaml);
 // for prefixItems / unevaluatedProperties / pathItems / etc. If new 3.2-isms appear,
 // this script will need a real down-converter (e.g. @redocly bundle with a transform).
 const patched = yaml.replace(/^openapi: 3\.2\.0/m, "openapi: 3.1.0");
-if (patched === yaml) {
+if (patched === yaml && !/^openapi: 3\.1\./m.test(yaml)) {
   console.warn("⚠ openapi: 3.2.0 stamp not found — generation may fail.");
 }
 writeFileSync(patchedPath, patched);

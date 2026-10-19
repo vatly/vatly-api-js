@@ -12,9 +12,18 @@ export type CreateCheckoutRequest = Schemas["CreateCheckoutRequest"];
 
 export type Customer = Schemas["Customer"];
 export type CreateCustomerRequest = Schemas["CreateCustomerRequest"];
+export type UpdateCustomerRequest = Schemas["UpdateCustomerRequest"];
+export type CreatePortalSessionRequest = Schemas["CreatePortalSessionRequest"];
+export type PortalSession = Schemas["PortalSession"];
 
 export type OneOffProduct = Schemas["OneOffProduct"];
+export type CreateOneOffProductRequest = Schemas["CreateOneOffProductRequest"];
+export type UpdateOneOffProductRequest = Schemas["UpdateOneOffProductRequest"];
 export type SubscriptionPlan = Schemas["SubscriptionPlan"];
+export type CreateSubscriptionPlanRequest = Schemas["CreateSubscriptionPlanRequest"];
+export type UpdateSubscriptionPlanRequest = Schemas["UpdateSubscriptionPlanRequest"];
+
+export type EurMoney = Schemas["EurMoney"];
 
 export type Order = Schemas["Order"];
 export type OrderLine = Schemas["OrderLine"];
@@ -49,6 +58,22 @@ export type WebhookEvent = Schemas["WebhookEvent"];
 export type WebhookDelivery = Schemas["WebhookDelivery"];
 
 export type Webhook = Schemas["Webhook"];
+
+/** Managed webhook-endpoint config returned by `/webhook-endpoints` CRUD. */
+export type WebhookEndpoint = Schemas["WebhookEndpoint"];
+export type CreateWebhookEndpointRequest = Schemas["CreateWebhookEndpointRequest"];
+export type UpdateWebhookEndpointRequest = Schemas["UpdateWebhookEndpointRequest"];
+/**
+ * Subscribable webhook event names, as a string-literal union. Deliberately
+ * excludes `webhook.setup`, which is always delivered and cannot be chosen.
+ */
+export type WebhookSubscriptionEventName = Schemas["WebhookSubscriptionEventName"];
+
+/** Request body for `POST /test-helpers/orders/{orderId}/simulate-payment`. */
+export type SimulateOrderPaymentRequest = Schemas["SimulateOrderPaymentRequest"];
+/** Request body for `POST /test-helpers/subscriptions/{id}/fast-forward-renewal`. */
+export type FastForwardSubscriptionRenewalRequest =
+  Schemas["FastForwardSubscriptionRenewalRequest"];
 
 export type BillingAddress = Schemas["BillingAddress"];
 export type BillingDetails = Schemas["BillingDetails"];

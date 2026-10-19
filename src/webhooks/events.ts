@@ -26,7 +26,16 @@
  * ```
  */
 
-import type { Chargeback, Checkout, Order, Refund, Subscription, Webhook } from "../types.js";
+import type {
+  Chargeback,
+  Checkout,
+  OneOffProduct,
+  Order,
+  Refund,
+  Subscription,
+  SubscriptionPlan,
+  Webhook,
+} from "../types.js";
 import type { WebhookDelivery } from "../types.js";
 import {
   type RawBody,
@@ -51,7 +60,10 @@ export const WebhookEventName = {
   RefundCanceled: "refund.canceled",
   SubscriptionStarted: "subscription.started",
   SubscriptionBillingUpdated: "subscription.billing_updated",
+  SubscriptionUpdated: "subscription.updated",
+  SubscriptionUpdateScheduled: "subscription.update_scheduled",
   SubscriptionCanceledImmediately: "subscription.canceled_immediately",
+  SubscriptionCanceledForNonpayment: "subscription.canceled_for_nonpayment",
   SubscriptionCanceledWithGracePeriod: "subscription.canceled_with_grace_period",
   SubscriptionCancellationGracePeriodCompleted: "subscription.cancellation_grace_period_completed",
   SubscriptionResumed: "subscription.resumed",
@@ -59,6 +71,16 @@ export const WebhookEventName = {
   CheckoutFailed: "checkout.failed",
   CheckoutCanceled: "checkout.canceled",
   CheckoutExpired: "checkout.expired",
+  OneOffProductUpdateSubmitted: "one_off_product.update_submitted",
+  OneOffProductUpdateApproved: "one_off_product.update_approved",
+  OneOffProductUpdateRejected: "one_off_product.update_rejected",
+  OneOffProductArchived: "one_off_product.archived",
+  OneOffProductUnarchived: "one_off_product.unarchived",
+  SubscriptionPlanUpdateSubmitted: "subscription_plan.update_submitted",
+  SubscriptionPlanUpdateApproved: "subscription_plan.update_approved",
+  SubscriptionPlanUpdateRejected: "subscription_plan.update_rejected",
+  SubscriptionPlanArchived: "subscription_plan.archived",
+  SubscriptionPlanUnarchived: "subscription_plan.unarchived",
   /**
    * Verification call sent when an endpoint is registered or its URL changes.
    * Delivered as a normal signed webhook with `entityType: "webhook"`; just
@@ -93,7 +115,10 @@ interface EventObjectMap {
   "refund.canceled": Refund;
   "subscription.started": Subscription;
   "subscription.billing_updated": Subscription;
+  "subscription.updated": Subscription;
+  "subscription.update_scheduled": Subscription;
   "subscription.canceled_immediately": Subscription;
+  "subscription.canceled_for_nonpayment": Subscription;
   "subscription.canceled_with_grace_period": Subscription;
   "subscription.cancellation_grace_period_completed": Subscription;
   "subscription.resumed": Subscription;
@@ -101,6 +126,16 @@ interface EventObjectMap {
   "checkout.failed": Checkout;
   "checkout.canceled": Checkout;
   "checkout.expired": Checkout;
+  "one_off_product.update_submitted": OneOffProduct;
+  "one_off_product.update_approved": OneOffProduct;
+  "one_off_product.update_rejected": OneOffProduct;
+  "one_off_product.archived": OneOffProduct;
+  "one_off_product.unarchived": OneOffProduct;
+  "subscription_plan.update_submitted": SubscriptionPlan;
+  "subscription_plan.update_approved": SubscriptionPlan;
+  "subscription_plan.update_rejected": SubscriptionPlan;
+  "subscription_plan.archived": SubscriptionPlan;
+  "subscription_plan.unarchived": SubscriptionPlan;
   "webhook.setup": Webhook;
 }
 
@@ -143,8 +178,12 @@ export type RefundFailedEvent = WebhookEventOfType<"refund.failed">;
 export type RefundCanceledEvent = WebhookEventOfType<"refund.canceled">;
 export type SubscriptionStartedEvent = WebhookEventOfType<"subscription.started">;
 export type SubscriptionBillingUpdatedEvent = WebhookEventOfType<"subscription.billing_updated">;
+export type SubscriptionUpdatedEvent = WebhookEventOfType<"subscription.updated">;
+export type SubscriptionUpdateScheduledEvent = WebhookEventOfType<"subscription.update_scheduled">;
 export type SubscriptionCanceledImmediatelyEvent =
   WebhookEventOfType<"subscription.canceled_immediately">;
+export type SubscriptionCanceledForNonpaymentEvent =
+  WebhookEventOfType<"subscription.canceled_for_nonpayment">;
 export type SubscriptionCanceledWithGracePeriodEvent =
   WebhookEventOfType<"subscription.canceled_with_grace_period">;
 export type SubscriptionCancellationGracePeriodCompletedEvent =
@@ -154,6 +193,22 @@ export type CheckoutPaidEvent = WebhookEventOfType<"checkout.paid">;
 export type CheckoutFailedEvent = WebhookEventOfType<"checkout.failed">;
 export type CheckoutCanceledEvent = WebhookEventOfType<"checkout.canceled">;
 export type CheckoutExpiredEvent = WebhookEventOfType<"checkout.expired">;
+export type OneOffProductUpdateSubmittedEvent =
+  WebhookEventOfType<"one_off_product.update_submitted">;
+export type OneOffProductUpdateApprovedEvent =
+  WebhookEventOfType<"one_off_product.update_approved">;
+export type OneOffProductUpdateRejectedEvent =
+  WebhookEventOfType<"one_off_product.update_rejected">;
+export type OneOffProductArchivedEvent = WebhookEventOfType<"one_off_product.archived">;
+export type OneOffProductUnarchivedEvent = WebhookEventOfType<"one_off_product.unarchived">;
+export type SubscriptionPlanUpdateSubmittedEvent =
+  WebhookEventOfType<"subscription_plan.update_submitted">;
+export type SubscriptionPlanUpdateApprovedEvent =
+  WebhookEventOfType<"subscription_plan.update_approved">;
+export type SubscriptionPlanUpdateRejectedEvent =
+  WebhookEventOfType<"subscription_plan.update_rejected">;
+export type SubscriptionPlanArchivedEvent = WebhookEventOfType<"subscription_plan.archived">;
+export type SubscriptionPlanUnarchivedEvent = WebhookEventOfType<"subscription_plan.unarchived">;
 export type WebhookSetupEvent = WebhookEventOfType<"webhook.setup">;
 
 /**

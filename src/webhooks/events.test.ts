@@ -61,9 +61,12 @@ describe("webhook event factory", () => {
       expect(WebhookEventName.WebhookSetup).toBe("webhook.setup");
     });
 
-    it("WEBHOOK_EVENT_NAMES lists every event (19 incl. webhook.setup)", () => {
-      expect(WEBHOOK_EVENT_NAMES).toHaveLength(19);
+    it("WEBHOOK_EVENT_NAMES lists every event (32 incl. webhook.setup)", () => {
+      expect(WEBHOOK_EVENT_NAMES).toHaveLength(32);
       expect(WEBHOOK_EVENT_NAMES).toContain("webhook.setup");
+      expect(WEBHOOK_EVENT_NAMES).toContain("subscription.updated");
+      expect(WEBHOOK_EVENT_NAMES).toContain("one_off_product.archived");
+      expect(WEBHOOK_EVENT_NAMES).toContain("subscription_plan.update_approved");
     });
 
     it("isWebhookEventName narrows known vs unknown", () => {
@@ -141,7 +144,10 @@ describe("webhook event factory", () => {
             return e.object.id;
           case "subscription.started":
           case "subscription.billing_updated":
+          case "subscription.updated":
+          case "subscription.update_scheduled":
           case "subscription.canceled_immediately":
+          case "subscription.canceled_for_nonpayment":
           case "subscription.canceled_with_grace_period":
           case "subscription.cancellation_grace_period_completed":
           case "subscription.resumed":
@@ -150,6 +156,18 @@ describe("webhook event factory", () => {
           case "checkout.failed":
           case "checkout.canceled":
           case "checkout.expired":
+            return e.object.id;
+          case "one_off_product.update_submitted":
+          case "one_off_product.update_approved":
+          case "one_off_product.update_rejected":
+          case "one_off_product.archived":
+          case "one_off_product.unarchived":
+            return e.object.id;
+          case "subscription_plan.update_submitted":
+          case "subscription_plan.update_approved":
+          case "subscription_plan.update_rejected":
+          case "subscription_plan.archived":
+          case "subscription_plan.unarchived":
             return e.object.id;
           case "webhook.setup":
             return e.object.url;

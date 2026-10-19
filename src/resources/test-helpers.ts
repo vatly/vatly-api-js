@@ -1,4 +1,10 @@
 import type { RequestOptions } from "../http.js";
+import type {
+  FastForwardSubscriptionRenewalRequest,
+  Order,
+  SimulateOrderPaymentRequest,
+  Subscription,
+} from "../types.js";
 import { BaseResource } from "./base.js";
 
 /**
@@ -16,29 +22,49 @@ export class TestHelpersResource extends BaseResource {
     }
   }
 
-  /** POST /test-helpers/subscriptions/{id}/fast-forward-renewal */
-  async fastForwardRenewal(subscriptionId: string, opts?: RequestOptions): Promise<unknown> {
+  /**
+   * POST /test-helpers/subscriptions/{id}/fast-forward-renewal
+   *
+   * Advances the subscription's billing cycle and creates a local pending
+   * renewal payment. Pass a body to simulate a deterministic payment outcome:
+   * `{ paymentStatus: "paid" }` settles the renewal; `{ paymentStatus: "failed",
+   * failureReason? }` declines it and starts payment recovery.
+   */
+  async fastForwardRenewal(
+    subscriptionId: string,
+    body?: FastForwardSubscriptionRenewalRequest,
+    opts?: RequestOptions,
+  ): Promise<Subscription> {
     this.assertTestMode("fastForwardRenewal");
-    return this.request<unknown>(
+    return this.request<Subscription>(
       {
         method: "POST",
         path: `/test-helpers/subscriptions/${encodeURIComponent(subscriptionId)}/fast-forward-renewal`,
+        body,
       },
       opts,
     );
   }
 
-  /** POST /test-helpers/mandated-payments/{transactionId}/simulate-failure */
-  async simulatePaymentFailure(
-    transactionId: string,
-    body?: Record<string, unknown>,
+  /**
+   * POST /test-helpers/orders/{orderId}/simulate-payment
+   *
+   * Settles or declines a test order's pending payment. Only works on orders
+   * charged to a saved payment method (subscription renewals, immediately
+   * invoiced subscription updates). Replaces the old `simulatePaymentFailure`
+   * helper on `/test-helpers/mandated-payments/{id}/simulate-failure`, which
+   * the API no longer exposes.
+   */
+  async simulateOrderPayment(
+    orderId: string,
+    body: SimulateOrderPaymentRequest,
     opts?: RequestOptions,
-  ): Promise<unknown> {
-    this.assertTestMode("simulatePaymentFailure");
-    return this.request<unknown>(
+  ): Promise<Order> {
+    this.assertTestMode("simulateOrderPayment");
+    return this.request<Order>(
       {
         method: "POST",
-        path: `/test-helpers/mandated-payments/${encodeURIComponent(transactionId)}/simulate-failure`,
+        path: `/test-helpers/orders/${encodeURIComponent(orderId)}/simulate-payment`,
         body,
       },
       opts,

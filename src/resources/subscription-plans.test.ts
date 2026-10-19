@@ -35,6 +35,71 @@ describe("subscriptionPlans", () => {
     expect(calls[0]!.url).toContain("/subscription-plans/subscription_plan_1");
   });
 
+  it("list forwards includeArchived", async () => {
+    const { client, calls } = makeTestClient([{ status: 200, body: page([]) }]);
+
+    await client.subscriptionPlans.list({ includeArchived: true });
+
+    expect(calls[0]!.url).toContain("includeArchived=true");
+  });
+
+  it("create POSTs the body to /subscription-plans", async () => {
+    const { client, calls } = makeTestClient([
+      { status: 201, body: { id: "subscription_plan_1" } },
+    ]);
+
+    await client.subscriptionPlans.create({
+      name: "Pro Monthly",
+      basePrice: { value: "29.00", currency: "EUR" },
+      interval: "month",
+      intervalCount: 1,
+      productType: "saas",
+      taxBehavior: "exclusive",
+    });
+
+    expect(calls[0]!.method).toBe("POST");
+    expect(calls[0]!.url).toContain("/subscription-plans");
+    expect(JSON.parse(calls[0]!.body!).name).toBe("Pro Monthly");
+  });
+
+  it("update PATCHes /subscription-plans/{id} with the body", async () => {
+    const { client, calls } = makeTestClient([
+      { status: 200, body: { id: "subscription_plan_1" } },
+    ]);
+
+    await client.subscriptionPlans.update("subscription_plan_1", {
+      basePrice: { value: "19.00", currency: "EUR" },
+    });
+
+    expect(calls[0]!.method).toBe("PATCH");
+    expect(calls[0]!.url).toContain("/subscription-plans/subscription_plan_1");
+    expect(JSON.parse(calls[0]!.body!)).toEqual({
+      basePrice: { value: "19.00", currency: "EUR" },
+    });
+  });
+
+  it("archive POSTs /subscription-plans/{id}/archive and ignores a 204 body", async () => {
+    const { client, calls } = makeTestClient([{ status: 204 }]);
+
+    const result = await client.subscriptionPlans.archive("subscription_plan_1");
+
+    expect(calls[0]!.method).toBe("POST");
+    expect(calls[0]!.url).toContain("/subscription-plans/subscription_plan_1/archive");
+    expect(result).toBeUndefined();
+  });
+
+  it("unarchive DELETEs /subscription-plans/{id}/archive and returns the plan", async () => {
+    const { client, calls } = makeTestClient([
+      { status: 200, body: { id: "subscription_plan_1", archivedAt: null } },
+    ]);
+
+    const plan = await client.subscriptionPlans.unarchive("subscription_plan_1");
+
+    expect(calls[0]!.method).toBe("DELETE");
+    expect(calls[0]!.url).toContain("/subscription-plans/subscription_plan_1/archive");
+    expect(plan.id).toBe("subscription_plan_1");
+  });
+
   it("listAll walks pages", async () => {
     const { client, calls } = makeTestClient([
       {

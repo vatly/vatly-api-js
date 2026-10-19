@@ -68,6 +68,58 @@ describe("customers", () => {
     expect(calls[0]!.url).toContain("/customers/customer_1/subscriptions/subscription_1");
   });
 
+  it("update PATCHes /customers/{id} with the body", async () => {
+    const { client, calls } = makeTestClient([
+      { status: 200, body: { id: "customer_1", email: "new@example.com" } },
+    ]);
+
+    await client.customers.update("customer_1", { email: "new@example.com" });
+
+    expect(calls[0]!.method).toBe("PATCH");
+    expect(calls[0]!.url).toContain("/customers/customer_1");
+    expect(JSON.parse(calls[0]!.body!)).toEqual({ email: "new@example.com" });
+  });
+
+  it("createPortalSession POSTs the body to /customers/{id}/portal-sessions", async () => {
+    const { client, calls } = makeTestClient([
+      {
+        status: 201,
+        body: {
+          url: "https://billing.vatly.com/authenticate?credential=abc",
+          expiresAt: "2026-10-19T12:15:00Z",
+          returnUrl: "https://merchant.example/billing",
+        },
+      },
+    ]);
+
+    const session = await client.customers.createPortalSession("customer_1", {
+      returnUrl: "https://merchant.example/billing",
+    });
+
+    expect(calls[0]!.method).toBe("POST");
+    expect(calls[0]!.url).toContain("/customers/customer_1/portal-sessions");
+    expect(JSON.parse(calls[0]!.body!)).toEqual({ returnUrl: "https://merchant.example/billing" });
+    expect(session.url).toBe("https://billing.vatly.com/authenticate?credential=abc");
+  });
+
+  it("createPortalSession allows an empty body", async () => {
+    const { client, calls } = makeTestClient([
+      {
+        status: 201,
+        body: {
+          url: "https://billing.vatly.com/authenticate?credential=xyz",
+          expiresAt: "2026-10-19T12:15:00Z",
+          returnUrl: null,
+        },
+      },
+    ]);
+
+    await client.customers.createPortalSession("customer_1");
+
+    expect(calls[0]!.method).toBe("POST");
+    expect(JSON.parse(calls[0]!.body!)).toEqual({});
+  });
+
   it("listAllSubscriptions paginates the nested collection", async () => {
     const base = "/customers/customer_1/subscriptions";
     const { client, calls } = makeTestClient([

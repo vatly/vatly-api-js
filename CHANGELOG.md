@@ -21,6 +21,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one-off-products, subscription-plans, orders, refunds, chargebacks,
   webhook-events).
 - Automated npm release workflow with build provenance.
+- `customers.update()` (PATCH `/customers/{id}` — name/email only).
+- `customers.createPortalSession()` for the hosted customer portal, plus
+  `CreatePortalSessionRequest` / `PortalSession` types.
+- `subscriptionPlans.create()`, `.update()`, `.archive()`, `.unarchive()`, and
+  an `includeArchived` filter on `list()` / `listAll()`.
+- `oneOffProducts.create()`, `.update()`, `.archive()`, `.unarchive()`, and
+  an `includeArchived` filter on `list()` / `listAll()`.
+- `client.webhookEndpoints`: full CRUD for the managed `/webhook-endpoints`
+  collection (`list`, `listAll`, `get`, `create`, `update`, `delete`) with
+  `WebhookEndpoint`, `CreateWebhookEndpointRequest`,
+  `UpdateWebhookEndpointRequest`, and `WebhookSubscriptionEventName` types.
+- 13 new webhook event names on `WebhookEventName` / `WEBHOOK_EVENT_NAMES` with
+  typed `object` narrowing and per-event type aliases: `subscription.updated`,
+  `subscription.update_scheduled`, `subscription.canceled_for_nonpayment`, five
+  `one_off_product.*`, and five `subscription_plan.*`.
+- `testHelpers.simulateOrderPayment(orderId, body)` →
+  `POST /test-helpers/orders/{orderId}/simulate-payment`, returning the `Order`.
+- Optional `FastForwardSubscriptionRenewalRequest` body on
+  `testHelpers.fastForwardRenewal()` so callers can force a `paid` / `failed`
+  renewal payment outcome.
+- Exported types: `UpdateCustomerRequest`, `CreateSubscriptionPlanRequest`,
+  `UpdateSubscriptionPlanRequest`, `CreateOneOffProductRequest`,
+  `UpdateOneOffProductRequest`, `SimulateOrderPaymentRequest`,
+  `FastForwardSubscriptionRenewalRequest`, and `EurMoney`.
 
 ### Changed
 
@@ -29,6 +53,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   makes `links` optional) instead of the persisted `WebhookEvent`. The persisted
   shape is still exported as `WebhookEvent` and returned by
   `client.webhookEvents.get()`.
+- `testHelpers.fastForwardRenewal()` now returns the `Subscription` (was
+  `unknown`).
+
+### Removed
+
+- `testHelpers.simulatePaymentFailure()` — the underlying
+  `/test-helpers/mandated-payments/{id}/simulate-failure` endpoint has been
+  retired by the API. Use `testHelpers.simulateOrderPayment(orderId, { paymentStatus: "failed", failureReason? })`
+  against the renewal order instead.
 
 ## [0.2.0]
 
