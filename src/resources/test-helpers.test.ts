@@ -60,4 +60,28 @@ describe("testHelpers", () => {
     expect(calls[0]!.url).toContain("/test-helpers/orders/order_1/simulate-payment");
     expect(JSON.parse(calls[0]!.body!)).toEqual({ paymentStatus: "paid" });
   });
+
+  it("simulateOrderPayment forwards failureReason for hard declines", async () => {
+    const { client, calls } = makeTestClient([{ status: 200, body: { id: "order_1" } }]);
+
+    await client.testHelpers.simulateOrderPayment("order_1", {
+      paymentStatus: "failed",
+      failureReason: "card_expired",
+    });
+
+    expect(JSON.parse(calls[0]!.body!)).toEqual({
+      paymentStatus: "failed",
+      failureReason: "card_expired",
+    });
+  });
+
+  it("url-encodes ids with special characters", async () => {
+    const { client, calls } = makeTestClient([{ status: 200, body: {} }]);
+
+    await client.testHelpers.simulateOrderPayment("order with spaces", {
+      paymentStatus: "paid",
+    });
+
+    expect(calls[0]!.url).toContain("/test-helpers/orders/order%20with%20spaces/simulate-payment");
+  });
 });

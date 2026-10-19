@@ -7,6 +7,8 @@ in directly.
 | File | What it shows |
 |------|---------------|
 | [`basic-crud.ts`](basic-crud.ts) | Create a customer, start a hosted checkout, fetch an order, paginate a collection, and handle `VatlyValidationError`. |
+| [`customer-portal.ts`](customer-portal.ts) | Mint a short-lived, single-use hosted-portal link so a signed-in customer can manage invoices and subscriptions. |
+| [`webhook-endpoints.ts`](webhook-endpoints.ts) | Provision a webhook endpoint from code — create, repoint the URL for a preview env, and delete. |
 | [`nextjs-webhook-route.ts`](nextjs-webhook-route.ts) | A Next.js App Router webhook handler that verifies the signature and processes a typed, discriminated event (incl. the `webhook.setup` handshake). |
 
 ## Running `basic-crud.ts`

@@ -43,6 +43,32 @@ describe("subscriptionPlans", () => {
     expect(calls[0]!.url).toContain("includeArchived=true");
   });
 
+  it("list omits includeArchived when not provided", async () => {
+    const { client, calls } = makeTestClient([{ status: 200, body: page([]) }]);
+
+    await client.subscriptionPlans.list();
+
+    expect(calls[0]!.url).not.toContain("includeArchived");
+  });
+
+  it("create accepts the minimal body (taxBehavior defaulted server-side)", async () => {
+    const { client, calls } = makeTestClient([
+      { status: 201, body: { id: "subscription_plan_1" } },
+    ]);
+
+    await client.subscriptionPlans.create({
+      name: "Pro Monthly",
+      description: "Full access to all Pro features",
+      basePrice: { value: "29.00", currency: "EUR" },
+      interval: "month",
+      intervalCount: 1,
+      productType: "saas",
+    });
+
+    const sent = JSON.parse(calls[0]!.body!);
+    expect(sent).not.toHaveProperty("taxBehavior");
+  });
+
   it("create POSTs the body to /subscription-plans", async () => {
     const { client, calls } = makeTestClient([
       { status: 201, body: { id: "subscription_plan_1" } },
@@ -50,6 +76,7 @@ describe("subscriptionPlans", () => {
 
     await client.subscriptionPlans.create({
       name: "Pro Monthly",
+      description: "Full access to all Pro features",
       basePrice: { value: "29.00", currency: "EUR" },
       interval: "month",
       intervalCount: 1,

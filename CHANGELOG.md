@@ -45,6 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `UpdateSubscriptionPlanRequest`, `CreateOneOffProductRequest`,
   `UpdateOneOffProductRequest`, `SimulateOrderPaymentRequest`,
   `FastForwardSubscriptionRenewalRequest`, and `EurMoney`.
+- `examples/customer-portal.ts` and `examples/webhook-endpoints.ts` showing the
+  new customer-portal and webhook-endpoint CRUD flows.
 
 ### Changed
 
@@ -55,6 +57,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `client.webhookEvents.get()`.
 - `testHelpers.fastForwardRenewal()` now returns the `Subscription` (was
   `unknown`).
+- Test files are now type-checked by `pnpm typecheck` (previously excluded).
+- Hand-adjusted `CreateOneOffProductRequest`, `CreateSubscriptionPlanRequest`,
+  `SimulateOrderPaymentRequest`, and `FastForwardSubscriptionRenewalRequest` so
+  fields that only carry a server-side default are optional. The upstream
+  `openapi-typescript` v7 generator mis-marks defaulted properties as required;
+  the SDK restores the spec's intent so callers don't have to send values they
+  want the server to default.
 
 ### Removed
 

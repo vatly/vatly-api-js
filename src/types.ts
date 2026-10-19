@@ -17,10 +17,25 @@ export type CreatePortalSessionRequest = Schemas["CreatePortalSessionRequest"];
 export type PortalSession = Schemas["PortalSession"];
 
 export type OneOffProduct = Schemas["OneOffProduct"];
-export type CreateOneOffProductRequest = Schemas["CreateOneOffProductRequest"];
+/**
+ * Hand-adjusted: `taxBehavior` carries a server default (`exclusive`), which
+ * `openapi-typescript` v7 marks as required. The spec itself leaves it optional.
+ */
+export type CreateOneOffProductRequest = Omit<
+  Schemas["CreateOneOffProductRequest"],
+  "taxBehavior"
+> & {
+  taxBehavior?: Schemas["CreateOneOffProductRequest"]["taxBehavior"];
+};
 export type UpdateOneOffProductRequest = Schemas["UpdateOneOffProductRequest"];
 export type SubscriptionPlan = Schemas["SubscriptionPlan"];
-export type CreateSubscriptionPlanRequest = Schemas["CreateSubscriptionPlanRequest"];
+/** Hand-adjusted for `taxBehavior` — see {@link CreateOneOffProductRequest}. */
+export type CreateSubscriptionPlanRequest = Omit<
+  Schemas["CreateSubscriptionPlanRequest"],
+  "taxBehavior"
+> & {
+  taxBehavior?: Schemas["CreateSubscriptionPlanRequest"]["taxBehavior"];
+};
 export type UpdateSubscriptionPlanRequest = Schemas["UpdateSubscriptionPlanRequest"];
 
 export type EurMoney = Schemas["EurMoney"];
@@ -69,11 +84,31 @@ export type UpdateWebhookEndpointRequest = Schemas["UpdateWebhookEndpointRequest
  */
 export type WebhookSubscriptionEventName = Schemas["WebhookSubscriptionEventName"];
 
-/** Request body for `POST /test-helpers/orders/{orderId}/simulate-payment`. */
-export type SimulateOrderPaymentRequest = Schemas["SimulateOrderPaymentRequest"];
-/** Request body for `POST /test-helpers/subscriptions/{id}/fast-forward-renewal`. */
-export type FastForwardSubscriptionRenewalRequest =
-  Schemas["FastForwardSubscriptionRenewalRequest"];
+/**
+ * Request body for `POST /test-helpers/orders/{orderId}/simulate-payment`.
+ *
+ * Hand-adjusted from the generated schema: `failureReason` carries a server
+ * default (`general_failure`), which `openapi-typescript` v7 marks as required.
+ * The spec itself leaves it optional, so we restore that here.
+ */
+export type SimulateOrderPaymentRequest = Omit<
+  Schemas["SimulateOrderPaymentRequest"],
+  "failureReason"
+> & {
+  failureReason?: Schemas["SimulateOrderPaymentRequest"]["failureReason"];
+};
+
+/**
+ * Request body for `POST /test-helpers/subscriptions/{id}/fast-forward-renewal`.
+ *
+ * Same `failureReason` fix as {@link SimulateOrderPaymentRequest}.
+ */
+export type FastForwardSubscriptionRenewalRequest = Omit<
+  Schemas["FastForwardSubscriptionRenewalRequest"],
+  "failureReason"
+> & {
+  failureReason?: Schemas["FastForwardSubscriptionRenewalRequest"]["failureReason"];
+};
 
 export type BillingAddress = Schemas["BillingAddress"];
 export type BillingDetails = Schemas["BillingDetails"];

@@ -42,11 +42,26 @@ describe("oneOffProducts", () => {
     expect(calls[0]!.url).toContain("includeArchived=true");
   });
 
+  it("create accepts the minimal body (taxBehavior defaulted server-side)", async () => {
+    const { client, calls } = makeTestClient([{ status: 201, body: { id: "one_off_product_1" } }]);
+
+    await client.oneOffProducts.create({
+      name: "Premium License",
+      description: "Lifetime access to all premium features",
+      basePrice: { value: "299.00", currency: "EUR" },
+      productType: "saas",
+    });
+
+    const sent = JSON.parse(calls[0]!.body!);
+    expect(sent).not.toHaveProperty("taxBehavior");
+  });
+
   it("create POSTs the body to /one-off-products", async () => {
     const { client, calls } = makeTestClient([{ status: 201, body: { id: "one_off_product_1" } }]);
 
     await client.oneOffProducts.create({
       name: "Premium License",
+      description: "Lifetime access to all premium features",
       basePrice: { value: "299.00", currency: "EUR" },
       productType: "saas",
       taxBehavior: "exclusive",
