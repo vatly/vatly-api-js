@@ -47,6 +47,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `FastForwardSubscriptionRenewalRequest`, and `EurMoney`.
 - `examples/customer-portal.ts` and `examples/webhook-endpoints.ts` showing the
   new customer-portal and webhook-endpoint CRUD flows.
+- `UnsupportedWebhookEvent` typed fallback for webhook deliveries whose
+  `eventName` isn't in the catalogue this SDK release knows about (e.g. the
+  server ships a new event between SDK versions). `toWebhookEvent` and the
+  `constructWebhookEvent*` helpers now return `MaybeUnsupportedWebhookEvent`;
+  use the new `isKnownWebhookEvent()` / `isUnsupportedWebhookEvent()` type
+  guards to branch before switching on `eventName`. The `nextjs-webhook-route`
+  example demonstrates the pattern.
 
 ### Changed
 

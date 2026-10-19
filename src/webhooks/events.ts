@@ -166,6 +166,42 @@ export type VatlyWebhookEvent = {
   [K in WebhookEventName]: WebhookEventOfType<K>;
 }[WebhookEventName];
 
+/**
+ * A verified webhook delivery whose `eventName` isn't in the catalogue this
+ * SDK version knows about — Vatly ships a new event, your SDK is older, and
+ * the delivery arrives before you upgrade. `object` is typed as `unknown`
+ * because the SDK has no shape to narrow it to.
+ *
+ * Treat it as a soft notice: log the `eventName` for triage, acknowledge the
+ * webhook with 2xx so Vatly doesn't retry, and plan to upgrade the SDK.
+ */
+export interface UnsupportedWebhookEvent extends WebhookEventEnvelope {
+  eventName: string;
+  object: unknown;
+}
+
+/**
+ * The union {@link toWebhookEvent} actually returns at runtime: a known typed
+ * event, or {@link UnsupportedWebhookEvent} when the delivery's `eventName` is
+ * one this SDK release doesn't recognize. Narrow with {@link isKnownWebhookEvent}
+ * before switching on `eventName`.
+ */
+export type MaybeUnsupportedWebhookEvent = VatlyWebhookEvent | UnsupportedWebhookEvent;
+
+/** Type guard: true when the event is one of the SDK's known catalogue entries. */
+export function isKnownWebhookEvent(
+  event: MaybeUnsupportedWebhookEvent,
+): event is VatlyWebhookEvent {
+  return isWebhookEventName(event.eventName);
+}
+
+/** Convenience inverse of {@link isKnownWebhookEvent} for `.filter()` ergonomics. */
+export function isUnsupportedWebhookEvent(
+  event: MaybeUnsupportedWebhookEvent,
+): event is UnsupportedWebhookEvent {
+  return !isWebhookEventName(event.eventName);
+}
+
 // Named per-event aliases (mirror the PHP event DTO classes), for callers that
 // want to annotate a handler with a single event's type.
 export type OrderPaidEvent = WebhookEventOfType<"order.paid">;
@@ -213,20 +249,38 @@ export type WebhookSetupEvent = WebhookEventOfType<"webhook.setup">;
 
 /**
  * Refine an already-verified {@link WebhookDelivery} into a discriminated
- * {@link VatlyWebhookEvent}. Pure type narrowing — the runtime value is
- * unchanged (the spec guarantees the `eventName` → `object` correlation, which
- * the type system can't prove on its own).
+ * event. Returns {@link VatlyWebhookEvent} when `eventName` is in the SDK's
+ * catalogue, {@link UnsupportedWebhookEvent} otherwise. Runtime check only —
+ * no field is mutated.
+ *
+ * `WebhookDelivery["eventName"]` is a closed union generated from the spec at
+ * SDK-build time, but the live wire can carry a newer name if Vatly ships an
+ * event between SDK releases. Guarding here keeps consumers from falling into
+ * the `never` default of an exhaustive `switch` on `eventName`.
  *
  * Use this when you verified the signature yourself (e.g. via `constructEvent`)
  * and want the narrowed event. To verify and narrow in one step, use
  * {@link constructWebhookEvent} / {@link constructWebhookEventFromRequest}.
+ *
+ * ```ts
+ * const event = toWebhookEvent(delivery);
+ * if (!isKnownWebhookEvent(event)) {
+ *   log.info("unknown vatly event", { eventName: event.eventName });
+ *   return ack();
+ * }
+ * switch (event.eventName) {
+ *   case "order.paid": ... // narrows event.object to Order
+ * }
+ * ```
  */
-export function toWebhookEvent(delivery: WebhookDelivery): VatlyWebhookEvent {
-  return delivery as VatlyWebhookEvent;
+export function toWebhookEvent(delivery: WebhookDelivery): MaybeUnsupportedWebhookEvent {
+  if (isWebhookEventName(delivery.eventName)) return delivery as VatlyWebhookEvent;
+  return delivery as unknown as UnsupportedWebhookEvent;
 }
 
 /**
- * Verify the signature and return a typed, discriminated {@link VatlyWebhookEvent}.
+ * Verify the signature and return a typed event, falling back to
+ * {@link UnsupportedWebhookEvent} for a never-before-seen `eventName`.
  *
  * The one-shot equivalent of {@link constructEvent} + {@link toWebhookEvent}.
  * Pass the RAW request body — reserialising the JSON changes the bytes and
@@ -237,19 +291,19 @@ export async function constructWebhookEvent(
   signatureHeader: string | null | undefined,
   secret: string | readonly string[],
   options?: VerifyOptions,
-): Promise<VatlyWebhookEvent> {
+): Promise<MaybeUnsupportedWebhookEvent> {
   return toWebhookEvent(await constructEvent(rawBody, signatureHeader, secret, options));
 }
 
 /**
- * Verify a Fetch {@link Request} and return a typed, discriminated
- * {@link VatlyWebhookEvent}. The one-shot equivalent of
- * {@link constructEventFromRequest} + {@link toWebhookEvent}.
+ * Verify a Fetch {@link Request} and return a typed event, falling back to
+ * {@link UnsupportedWebhookEvent} for a never-before-seen `eventName`. The
+ * one-shot equivalent of {@link constructEventFromRequest} + {@link toWebhookEvent}.
  */
 export async function constructWebhookEventFromRequest(
   request: Request,
   secret: string | readonly string[],
   options?: VerifyOptions,
-): Promise<VatlyWebhookEvent> {
+): Promise<MaybeUnsupportedWebhookEvent> {
   return toWebhookEvent(await constructEventFromRequest(request, secret, options));
 }

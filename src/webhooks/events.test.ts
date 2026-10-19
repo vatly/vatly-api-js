@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { Order, Webhook } from "../types.js";
 import {
+  type UnsupportedWebhookEvent,
   type VatlyWebhookEvent,
   WEBHOOK_EVENT_NAMES,
   WebhookEventName,
   constructWebhookEvent,
   constructWebhookEventFromRequest,
+  isKnownWebhookEvent,
+  isUnsupportedWebhookEvent,
   isWebhookEventName,
   toWebhookEvent,
 } from "./events.js";
@@ -87,7 +90,8 @@ describe("webhook event factory", () => {
       );
 
       expect(event.eventName).toBe("order.paid");
-      if (event.eventName === "order.paid") {
+      expect(isKnownWebhookEvent(event)).toBe(true);
+      if (isKnownWebhookEvent(event) && event.eventName === "order.paid") {
         // Compiles only if `object` narrowed to Order:
         const order: Order = event.object;
         expect(order.id).toBe("order_1");
@@ -101,11 +105,56 @@ describe("webhook event factory", () => {
       });
 
       expect(event.eventName).toBe("webhook.setup");
-      if (event.eventName === "webhook.setup") {
+      if (isKnownWebhookEvent(event) && event.eventName === "webhook.setup") {
         const webhook: Webhook = event.object;
         expect(webhook.url).toBe("https://merchant.example/hook");
       }
       expect(event.links).toBeUndefined();
+    });
+  });
+
+  describe("unsupported events", () => {
+    const futureEventBody = JSON.stringify({
+      id: "webhook_event_future",
+      resource: "webhook_event",
+      eventName: "subscription.future_event",
+      entityType: "subscription",
+      entityId: "subscription_1",
+      object: { id: "subscription_1", some_future_field: 42 },
+      createdAt: "2026-10-19T12:00:00+00:00",
+      testmode: false,
+      links: {
+        self: {
+          href: "https://api.vatly.com/v1/webhook-events/webhook_event_future",
+          type: "application/json",
+        },
+      },
+    });
+
+    it("surfaces an UnsupportedWebhookEvent when eventName isn't in the catalogue", async () => {
+      const event = await constructWebhookEvent(
+        futureEventBody,
+        await signed(futureEventBody),
+        SECRET,
+        { now: FROZEN_NOW },
+      );
+
+      expect(isKnownWebhookEvent(event)).toBe(false);
+      expect(isUnsupportedWebhookEvent(event)).toBe(true);
+      if (isUnsupportedWebhookEvent(event)) {
+        expect(event.eventName).toBe("subscription.future_event");
+        // object is `unknown` — consumers must check its shape explicitly
+        const raw = event.object as { id: string };
+        expect(raw.id).toBe("subscription_1");
+      }
+    });
+
+    it("toWebhookEvent returns an UnsupportedWebhookEvent for an unknown name", () => {
+      const delivery = JSON.parse(futureEventBody);
+      const event = toWebhookEvent(delivery);
+      expect(isKnownWebhookEvent(event)).toBe(false);
+      // Round-trip: the envelope is unchanged (same reference).
+      expect(event).toBe(delivery);
     });
   });
 
@@ -122,12 +171,13 @@ describe("webhook event factory", () => {
   });
 
   describe("toWebhookEvent", () => {
-    it("is pure narrowing (returns the same value, exhaustive switch type-checks)", () => {
+    it("is pure narrowing on known events (returns the same value, exhaustive switch type-checks)", () => {
       const delivery = JSON.parse(orderPaidBody);
       const event = toWebhookEvent(delivery);
       expect(event).toBe(delivery);
+      if (!isKnownWebhookEvent(event)) throw new Error("expected a known event");
 
-      // Exhaustiveness: the union is closed, so a fully-handled switch leaves
+      // Exhaustiveness over VatlyWebhookEvent: fully-handled switch leaves
       // `never` in the default — this function compiling proves it.
       const describe = (e: VatlyWebhookEvent): string => {
         switch (e.eventName) {
