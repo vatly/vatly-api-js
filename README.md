@@ -2,7 +2,7 @@
 
 # @vatly/sdk
 
-Official TypeScript SDK for the [Vatly](https://vatly.com) Merchant of Record API.
+Official TypeScript SDK for [Vatly](https://vatly.com), the Merchant of Record for European software and digital products. Vatly is the legal seller on every sale and handles payments, tax and compliance.
 
 - Runs on Node 20+, Cloudflare Workers, Vercel Edge, and Deno.
 - Types generated from the OpenAPI spec; client is hand-written.
