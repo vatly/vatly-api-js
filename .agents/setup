@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
+
+SECONDS=0
+echo "Checking the orb's Node.js toolchain..."
+node -e 'if (Number(process.versions.node.split(".")[0]) < 20) throw new Error("Node.js 20+ is required")'
+node --version
+
+# Use the repository's pin, rather than whichever pnpm ships in the base image.
+pnpm_version="$(node -p 'require("./package.json").packageManager.replace(/^pnpm@/, "")')"
+if ! command -v pnpm >/dev/null || [[ "$(pnpm --version)" != "$pnpm_version" ]]; then
+  npm install --global "pnpm@$pnpm_version" --no-audit --no-fund
+fi
+pnpm --version
+
+echo "Installing locked development dependencies..."
+pnpm install --frozen-lockfile
+echo "Dependencies ready after ${SECONDS}s. Building the SDK..."
+pnpm build
+echo "Orb setup finished in ${SECONDS}s."
