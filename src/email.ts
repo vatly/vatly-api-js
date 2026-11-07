@@ -1,13 +1,11 @@
 /**
  * Email Punycode helpers.
  *
- * The Vatly API requires ASCII-encoded (Punycode, RFC 3492) domains on input
- * and returns canonical ASCII on output. The local part is NOT Unicode —
- * EAI / SMTPUTF8 is not supported.
+ * The Vatly API accepts Unicode domains directly and returns canonical ASCII
+ * on output. These optional helpers are not API input requirements; encodeEmail
+ * deliberately rejects non-ASCII local parts, while the API may store them.
  *
- * TODO(sander): choose a final implementation. Node has `url.domainToASCII()`
- * but it is NOT guaranteed on edge runtimes (Cloudflare Workers, Vercel Edge).
- * The current implementation uses the WHATWG `URL` parser, which IS spec'd
+ * The implementation uses the WHATWG `URL` parser, which is specified
  * to apply UTS-46 / Punycode to hostnames and is available on Node 20+,
  * Workers, Vercel Edge, Deno, and the browser. If we later find a runtime
  * that doesn't honor IDN in URL hostnames, swap to the `punycode/` userland

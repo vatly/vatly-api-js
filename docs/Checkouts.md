@@ -30,13 +30,13 @@ Checkouts create hosted payment pages for your customers. When a checkout comple
 | Name | Type | Description |
 | --- | --- | --- |
 | `products` | `array` | Product items to sell. Each item is `{ id, quantity }`, where `id` is a `subscription_plan_…` or `one_off_product_…` id. |
+| `redirectUrlSuccess` | `string` | Success redirect URL. |
+| `redirectUrlCanceled` | `string` | Cancel redirect URL. |
 
 ### Optional attributes
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `redirectUrlSuccess` | `string` | Success redirect URL. |
-| `redirectUrlCanceled` | `string` | Cancel redirect URL. |
 | `customerId` | `string` | Attach the checkout to an existing customer. |
 | `metadata` | `object` | Custom metadata echoed back on the checkout and resulting order. |
 

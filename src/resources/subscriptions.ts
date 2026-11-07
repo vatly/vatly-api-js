@@ -1,7 +1,9 @@
 import type { RequestOptions } from "../http.js";
 import type { ListParams, PaginatedList } from "../pagination.js";
 import type {
+  CancelSubscriptionParams,
   Subscription,
+  SubscriptionBillingUpdateLink,
   UpdateSubscriptionBillingRequest,
   UpdateSubscriptionRequest,
 } from "../types.js";
@@ -28,9 +30,8 @@ export class SubscriptionsResource extends BaseResource {
 
   /**
    * PATCH /subscriptions/{id}
-   * Update plan, quantity, or trial. The spec has an internal inconsistency around
-   * whether `trialUntil` may be sent alone — the SDK passes the body through unchanged
-   * and lets the server validate. See README "Known spec ambiguities".
+   * Update plan, price or quantity. At least one of these is required by the
+   * server; trialUntil may accompany it but cannot be sent alone.
    */
   update(
     subscriptionId: string,
@@ -47,11 +48,12 @@ export class SubscriptionsResource extends BaseResource {
     );
   }
 
-  cancel(subscriptionId: string, opts?: RequestOptions): Promise<Subscription> {
-    return this.request<Subscription>(
+  cancel(subscriptionId: string, opts?: RequestOptions & CancelSubscriptionParams): Promise<void> {
+    return this.request<void>(
       {
         method: "DELETE",
         path: `/subscriptions/${encodeURIComponent(subscriptionId)}`,
+        query: { immediately: opts?.immediately },
       },
       opts,
     );
@@ -81,8 +83,8 @@ export class SubscriptionsResource extends BaseResource {
     subscriptionId: string,
     body: UpdateSubscriptionBillingRequest,
     opts?: RequestOptions,
-  ): Promise<Subscription> {
-    return this.request<Subscription>(
+  ): Promise<SubscriptionBillingUpdateLink> {
+    return this.request<SubscriptionBillingUpdateLink>(
       {
         method: "POST",
         path: `/subscriptions/${encodeURIComponent(subscriptionId)}/billing-update-link`,
@@ -97,7 +99,7 @@ export class SubscriptionsResource extends BaseResource {
     subscriptionId: string,
     body: UpdateSubscriptionBillingRequest,
     opts?: RequestOptions,
-  ): Promise<Subscription> {
+  ): Promise<SubscriptionBillingUpdateLink> {
     return this.createBillingUpdateLink(subscriptionId, body, opts);
   }
 }

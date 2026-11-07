@@ -45,15 +45,8 @@ export function aCreateCustomerRequest(
 export function anUpdateSubscriptionRequest(
   overrides: Partial<UpdateSubscriptionRequest> = {},
 ): UpdateSubscriptionRequest {
-  // openapi-typescript treats schema fields with `default:` as required in the
-  // emitted type, so we set them here even though the server applies defaults
-  // when they're omitted.
   return {
     subscriptionPlanId: "subscription_plan_Wt5mNvBxKw7YcZaEjLhR",
-    prorate: true,
-    applyImmediately: false,
-    invoiceImmediately: false,
-    resetAnchor: false,
     ...overrides,
   };
 }

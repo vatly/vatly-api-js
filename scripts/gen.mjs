@@ -1,55 +1,36 @@
 #!/usr/bin/env node
-// Fetch the Vatly OpenAPI spec, down-convert to 3.1.0 (openapi-typescript / @redocly
-// do not yet support 3.2.0 — see STOP item 1 in the SDK README), and emit typed schema.
-// Run with: pnpm gen
-
-import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+// Fetch explicitly with `pnpm gen`; verify the committed snapshot offline with
+// `pnpm gen:check`. Builds never depend on network access.
+import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { spawnSync } from "node:child_process";
+import openapiTS, { astToString } from "openapi-typescript";
 
-const SPEC_URL =
-  "https://raw.githubusercontent.com/vatly/vatly-docs/refs/heads/main/public/openapi.yaml";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const root = resolve(__dirname, "..");
-const specDir = resolve(root, "spec");
-const rawPath = resolve(specDir, "openapi.yaml");
-const patchedPath = resolve(specDir, "openapi.3.1.yaml");
-// A verbatim copy of the fetched spec at the repo root, kept in sync on every
-// `pnpm gen` run. It's the canonical reference for humans and AI tools reading
-// the API contract without digging into spec/ or src/generated/.
-const rootRefPath = resolve(root, "openapi.yaml");
-const outDir = resolve(root, "src/generated");
-const outFile = resolve(outDir, "schema.ts");
-
-mkdirSync(specDir, { recursive: true });
-mkdirSync(outDir, { recursive: true });
-
-console.log(`→ fetching ${SPEC_URL}`);
-const res = await fetch(SPEC_URL);
-if (!res.ok) {
-  console.error(`failed to fetch spec: ${res.status} ${res.statusText}`);
-  process.exit(1);
+const root = new URL("../", import.meta.url);
+const specPath = new URL("spec/openapi.yaml", root);
+const referencePath = new URL("openapi.yaml", root);
+const outputPath = new URL("src/generated/schema.ts", root);
+const check = process.argv.includes("--check");
+const source = "https://docs.vatly.com/openapi.yaml";
+let yaml;
+if (check) {
+  yaml = readFileSync(specPath, "utf8");
+} else {
+  console.log(`Fetching ${source}`);
+  const response = await fetch(source, { signal: AbortSignal.timeout(30_000) });
+  if (!response.ok) throw new Error(`Spec fetch failed: ${response.status}`);
+  yaml = await response.text();
 }
-const yaml = await res.text();
-writeFileSync(rawPath, yaml);
-writeFileSync(rootRefPath, yaml);
 
-// Only patch required for openapi-typescript@7 + @redocly/openapi-core@1.34 is the version
-// stamp. The spec uses no 3.2-only constructs at the time of writing — verified by grep
-// for prefixItems / unevaluatedProperties / pathItems / etc. If new 3.2-isms appear,
-// this script will need a real down-converter (e.g. @redocly bundle with a transform).
-const patched = yaml.replace(/^openapi: 3\.2\.0/m, "openapi: 3.1.0");
-if (patched === yaml && !/^openapi: 3\.1\./m.test(yaml)) {
-  console.warn("⚠ openapi: 3.2.0 stamp not found — generation may fail.");
+// Do not silently downgrade future OpenAPI versions: the generator must support
+// the real contract. Defaults on optional request fields must remain optional.
+const schema = astToString(await openapiTS(yaml, { defaultNonNullable: false }));
+if (check) {
+  if (readFileSync(referencePath, "utf8") !== yaml || readFileSync(outputPath, "utf8") !== schema) {
+    throw new Error("OpenAPI snapshots/types are out of sync. Run pnpm gen.");
+  }
+  console.log("OpenAPI snapshots and generated types are in sync.");
+} else {
+  for (const path of [specPath, referencePath]) writeFileSync(path, yaml);
+  writeFileSync(outputPath, schema);
+  console.log(`Generated ${fileURLToPath(outputPath)}`);
 }
-writeFileSync(patchedPath, patched);
-
-console.log(`→ running openapi-typescript`);
-const result = spawnSync(
-  "npx",
-  ["--yes", "openapi-typescript", patchedPath, "-o", outFile],
-  { stdio: "inherit", cwd: root },
-);
-process.exit(result.status ?? 1);

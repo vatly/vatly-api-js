@@ -2,7 +2,7 @@
  * Convenience re-exports of generated schemas so consumers don't need to
  * navigate `components["schemas"]["..."]` manually.
  */
-import type { components } from "./generated/schema.js";
+import type { components, operations } from "./generated/schema.js";
 
 type Schemas = components["schemas"];
 
@@ -17,28 +17,17 @@ export type CreatePortalSessionRequest = Schemas["CreatePortalSessionRequest"];
 export type PortalSession = Schemas["PortalSession"];
 
 export type OneOffProduct = Schemas["OneOffProduct"];
-/**
- * Hand-adjusted: `taxBehavior` carries a server default (`exclusive`), which
- * `openapi-typescript` v7 marks as required. The spec itself leaves it optional.
- */
-export type CreateOneOffProductRequest = Omit<
-  Schemas["CreateOneOffProductRequest"],
-  "taxBehavior"
-> & {
-  taxBehavior?: Schemas["CreateOneOffProductRequest"]["taxBehavior"];
-};
+export type CreateOneOffProductRequest = Schemas["CreateOneOffProductRequest"];
 export type UpdateOneOffProductRequest = Schemas["UpdateOneOffProductRequest"];
 export type SubscriptionPlan = Schemas["SubscriptionPlan"];
-/** Hand-adjusted for `taxBehavior` — see {@link CreateOneOffProductRequest}. */
-export type CreateSubscriptionPlanRequest = Omit<
-  Schemas["CreateSubscriptionPlanRequest"],
-  "taxBehavior"
-> & {
-  taxBehavior?: Schemas["CreateSubscriptionPlanRequest"]["taxBehavior"];
-};
+export type CreateSubscriptionPlanRequest = Schemas["CreateSubscriptionPlanRequest"];
 export type UpdateSubscriptionPlanRequest = Schemas["UpdateSubscriptionPlanRequest"];
-
-export type EurMoney = Schemas["EurMoney"];
+export type OneOffProductListParams = NonNullable<
+  operations["listOneOffProducts"]["parameters"]["query"]
+>;
+export type SubscriptionPlanListParams = NonNullable<
+  operations["listSubscriptionPlans"]["parameters"]["query"]
+>;
 
 export type Order = Schemas["Order"];
 export type OrderLine = Schemas["OrderLine"];
@@ -55,6 +44,16 @@ export type Chargeback = Schemas["Chargeback"];
 export type Subscription = Schemas["Subscription"];
 export type UpdateSubscriptionRequest = Schemas["UpdateSubscriptionRequest"];
 export type UpdateSubscriptionBillingRequest = Schemas["UpdateSubscriptionBillingRequest"];
+export type SubscriptionBillingUpdateLink =
+  operations["createSubscriptionBillingUpdateLink"]["responses"][200]["content"]["application/json"];
+export type CancelSubscriptionParams = NonNullable<
+  operations["cancelSubscription"]["parameters"]["query"]
+>;
+export type Mandate = Schemas["Mandate"];
+export type FastForwardSubscriptionRenewalRequest =
+  Schemas["FastForwardSubscriptionRenewalRequest"];
+export type SimulateOrderPaymentRequest = Schemas["SimulateOrderPaymentRequest"];
+export type EurMoney = Schemas["EurMoney"];
 
 /**
  * The persisted webhook event resource, as returned by `GET /webhook-events`.
@@ -73,42 +72,10 @@ export type WebhookEvent = Schemas["WebhookEvent"];
 export type WebhookDelivery = Schemas["WebhookDelivery"];
 
 export type Webhook = Schemas["Webhook"];
-
-/** Managed webhook-endpoint config returned by `/webhook-endpoints` CRUD. */
 export type WebhookEndpoint = Schemas["WebhookEndpoint"];
 export type CreateWebhookEndpointRequest = Schemas["CreateWebhookEndpointRequest"];
 export type UpdateWebhookEndpointRequest = Schemas["UpdateWebhookEndpointRequest"];
-/**
- * Subscribable webhook event names, as a string-literal union. Deliberately
- * excludes `webhook.setup`, which is always delivered and cannot be chosen.
- */
 export type WebhookSubscriptionEventName = Schemas["WebhookSubscriptionEventName"];
-
-/**
- * Request body for `POST /test-helpers/orders/{orderId}/simulate-payment`.
- *
- * Hand-adjusted from the generated schema: `failureReason` carries a server
- * default (`general_failure`), which `openapi-typescript` v7 marks as required.
- * The spec itself leaves it optional, so we restore that here.
- */
-export type SimulateOrderPaymentRequest = Omit<
-  Schemas["SimulateOrderPaymentRequest"],
-  "failureReason"
-> & {
-  failureReason?: Schemas["SimulateOrderPaymentRequest"]["failureReason"];
-};
-
-/**
- * Request body for `POST /test-helpers/subscriptions/{id}/fast-forward-renewal`.
- *
- * Same `failureReason` fix as {@link SimulateOrderPaymentRequest}.
- */
-export type FastForwardSubscriptionRenewalRequest = Omit<
-  Schemas["FastForwardSubscriptionRenewalRequest"],
-  "failureReason"
-> & {
-  failureReason?: Schemas["FastForwardSubscriptionRenewalRequest"]["failureReason"];
-};
 
 export type BillingAddress = Schemas["BillingAddress"];
 export type BillingDetails = Schemas["BillingDetails"];

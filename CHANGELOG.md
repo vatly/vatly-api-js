@@ -1,11 +1,78 @@
 # Changelog
 
-All notable changes to `@vatly/sdk` are documented in this file.
+All notable changes to `@getvatly/sdk` are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+### Added
+
+- `UnsupportedWebhookEvent` typed fallback for webhook deliveries whose
+  `eventName` isn't in the catalogue this SDK release knows about (e.g. the
+  server ships a new event between SDK versions). `toWebhookEvent` and the
+  `constructWebhookEvent*` helpers now return `MaybeUnsupportedWebhookEvent`;
+  use the new `isKnownWebhookEvent()` / `isUnsupportedWebhookEvent()` type
+  guards to branch before switching on `eventName`. The `nextjs-webhook-route`
+  example demonstrates the pattern. Mirrors `vatly-api-php`'s
+  `UnsupportedWebhookReceived` DTO.
+
+## 0.3.0-alpha.1 — prepared, not published
+
+### Added
+
+- Coverage of all 50 REST operations in the production OpenAPI 3.1.0 snapshot
+  from docs.vatly.com, with source commit and SHA-256 recorded in `spec/README.md`.
+- Customer identity updates and short-lived customer portal sessions.
+- Product/plan creation, updates, archive/unarchive, and `includeArchived` filters.
+- Webhook endpoint management and the full 32-name typed delivery catalogue,
+  including subscription updates/nonpayment and product/plan lifecycle events.
+- Typed deterministic renewal/payment simulation helpers, guarded to test mode.
+- `VatlyConflictError`, optional structured `.details`, and safe `in_progress`
+  idempotency-conflict retries. Unknown outcomes require caller reconciliation.
+- Offline generated-contract drift check, tests against every documented route,
+  and isolated tarball tests exercising ESM/CJS over real local HTTP, independently
+  signed webhooks, NodeNext/Bundler declarations, and compiled examples.
+- Full operation reference, alpha migration notes and updated usage guides.
+
+### Changed
+
+- Package renamed to `@getvatly/sdk`; GitHub metadata targets `vatly/vatly-js`.
+- Version is a prerelease and publication defaults to the `alpha` npm dist-tag.
+  No tag or release is created by this work.
+- Conditional ESM/CJS exports resolve matching `.d.ts` / `.d.cts` declarations.
+  Packing builds the SDK and includes docs, examples, banner, and OpenAPI reference.
+- Money currencies and pagination link fields now derive directly from generated
+  schemas. `fromMinorUnits` preserves the literal currency for EUR-only requests.
+- Generation uses the locked installed generator with no OpenAPI downgrade or
+  network dependency during builds. Optional server-defaulted fields stay optional.
+- Subscription cancellation returns `void` (204) and accepts `immediately` in
+  options; billing-update methods return a hosted link, not a subscription.
+- `fastForwardRenewal(id, body?, opts?)` returns a typed subscription. The obsolete
+  transaction-based `simulatePaymentFailure` is replaced by `simulateOrderPayment`.
+
+### Fixed
+
+- Timeouts remain active through body consumption; cancellation interrupts
+  backoff, and an already-aborted request never reaches fetch.
+- Header merging is case-insensitive and header-supplied idempotency keys are
+  honored without auto-generation overwriting them.
+- `Retry-After` supports HTTP-date and zero seconds without truncating long waits
+  to 60 seconds. Malformed nonempty JSON success bodies raise a typed API error.
+- Auto-pagination rejects broken/repeating cursors instead of truncating or looping.
+- Money conversion rejects fractional/unsafe numeric minor units rather than
+  silently truncating or losing precision. Large `bigint` values remain exact.
+- Webhook examples deduplicate the signed event ID after verification, rather
+  than trusting an unsigned event-ID header before signature verification.
+
+### Validation limits
+
+- Authenticated Vatly integration tests and edge-runtime deployment tests have
+  not been run. Account-specific credentials/resources and npm scope access are
+  needed before external release validation. GitHub transfer precedes publication.
+
+## Earlier unreleased baseline work
 
 ### Added
 

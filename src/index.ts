@@ -1,4 +1,5 @@
 export { VatlyClient } from "./client.js";
+export type { RequestOptions } from "./http.js";
 export {
   VATLY_PRODUCTION_BASE_URL,
   VATLY_STAGING_BASE_URL,
@@ -16,6 +17,7 @@ export {
   VatlyAuthError,
   VatlyForbiddenError,
   VatlyNotFoundError,
+  VatlyConflictError,
   VatlyValidationError,
   VatlyRateLimitError,
   VatlyApiError,

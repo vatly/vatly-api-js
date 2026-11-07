@@ -148,6 +148,8 @@ interface EventObjectMap {
 type AssertExtends<A extends B, B> = A extends B ? true : never;
 type _AllEventNamesMapped = AssertExtends<WebhookDelivery["eventName"], keyof EventObjectMap>;
 type _NoExtraEventNames = AssertExtends<keyof EventObjectMap, WebhookDelivery["eventName"]>;
+type _AllConstantsPresent = AssertExtends<WebhookDelivery["eventName"], WebhookEventName>;
+type _NoExtraConstants = AssertExtends<WebhookEventName, WebhookDelivery["eventName"]>;
 
 /** The webhook envelope, minus the two fields the typed union refines. */
 export type WebhookEventEnvelope = Omit<WebhookDelivery, "eventName" | "object">;

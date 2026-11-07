@@ -1,13 +1,13 @@
 /**
  * Typed error hierarchy for Vatly API responses.
- * The Vatly spec's Error schema is `{ message: string }` only; ValidationError adds
- * `errors: Record<string, string[]>`. There is NO `details` field — do not invent one.
+ * Standard errors may carry structured details; validation errors add field messages.
  */
 
 export interface VatlyErrorBody {
   message?: string;
   // ValidationError variant: field → array of messages.
   errors?: Record<string, string[]>;
+  details?: Record<string, unknown>;
   // We keep an open index so server-side additions don't break consumers, but the
   // shape above is the contract we rely on.
   [k: string]: unknown;
@@ -25,6 +25,7 @@ export class VatlyError extends Error {
   readonly body: VatlyErrorBody | string | undefined;
   readonly url: string | undefined;
   readonly method: string | undefined;
+  readonly details: Record<string, unknown> | undefined;
 
   constructor(message: string, ctx: VatlyErrorContext) {
     super(message);
@@ -33,6 +34,7 @@ export class VatlyError extends Error {
     this.body = ctx.body;
     this.url = ctx.url;
     this.method = ctx.method;
+    this.details = typeof ctx.body === "object" && ctx.body !== null ? ctx.body.details : undefined;
   }
 }
 
@@ -54,6 +56,17 @@ export class VatlyNotFoundError extends VatlyError {
   constructor(ctx: VatlyErrorContext) {
     super(messageFrom(ctx) ?? "Resource not found.", ctx);
     this.name = "VatlyNotFoundError";
+  }
+}
+
+/** Inspect details.idempotency_outcome before retrying or reconciling a mutation. */
+export class VatlyConflictError extends VatlyError {
+  readonly retryAfter: number | undefined;
+
+  constructor(ctx: VatlyErrorContext & { retryAfter?: number }) {
+    super(messageFrom(ctx) ?? "Conflict.", ctx);
+    this.name = "VatlyConflictError";
+    this.retryAfter = ctx.retryAfter;
   }
 }
 
@@ -128,6 +141,8 @@ export function errorFromResponse(ctx: VatlyErrorContext & { retryAfter?: number
       return new VatlyForbiddenError(ctx);
     case 404:
       return new VatlyNotFoundError(ctx);
+    case 409:
+      return new VatlyConflictError(ctx);
     case 422:
       return new VatlyValidationError(ctx);
     case 429:

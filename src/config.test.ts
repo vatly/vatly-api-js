@@ -40,6 +40,15 @@ describe("config", () => {
   });
 
   describe("resolveConfig", () => {
+    it("rejects retry and timeout options that would skip requests or overflow arithmetic", () => {
+      for (const maxRetries of [-1, 0.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+        expect(() => resolveConfig({ apiKey: VALID_TEST_KEY, maxRetries })).toThrow(RangeError);
+      }
+      for (const timeoutMs of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+        expect(() => resolveConfig({ apiKey: VALID_TEST_KEY, timeoutMs })).toThrow(RangeError);
+      }
+    });
+
     it("defaults to production base URL", () => {
       const cfg = resolveConfig({ apiKey: VALID_TEST_KEY });
       expect(cfg.baseUrl).toBe("https://api.vatly.com/v1");

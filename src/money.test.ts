@@ -2,6 +2,17 @@ import { describe, expect, it } from "vitest";
 import { type Money, fromMinorUnits, moneyEquals, toMinorUnits } from "./money.js";
 
 describe("Money", () => {
+  it("rejects lossy numeric minor units and preserves large bigint values", () => {
+    for (const value of [1.5, Number.MAX_SAFE_INTEGER + 1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => fromMinorUnits(value, "EUR")).toThrow(RangeError);
+    }
+    expect(fromMinorUnits(9007199254740993n, "EUR").value).toBe("90071992547409.93");
+    for (const decimals of [-1, 1.5, Number.NaN]) {
+      expect(() => fromMinorUnits(123n, "EUR", decimals)).toThrow(RangeError);
+      expect(() => toMinorUnits({ value: "1.23", currency: "EUR" }, decimals)).toThrow(RangeError);
+    }
+  });
+
   it("keeps value as a string through round-trip", () => {
     const m: Money = { value: "99.99", currency: "EUR" };
     const minor = toMinorUnits(m);

@@ -13,7 +13,7 @@ Subscriptions are recurring billing relationships. They renew automatically acco
 | `subscriptionPlanId` | `string` | The plan this subscription is based on. |
 | `name` | `string` | Display name. |
 | `quantity` | `number` | Number of units. |
-| `status` | `string` | e.g. `active`, `canceled`, `trialing`. |
+| `status` | `string` | `active`, `created`, `trial`, `on_grace_period`, `paused`, or `canceled`. |
 | `interval` / `intervalCount` | `string` / `number` | Billing cadence (e.g. `month` × 1). |
 | `mandate` | `Mandate \| null` | Payment method on file: `{ method, maskedIdentifier }`. `null` until one is bound. |
 | `startedAt` / `endedAt` / `canceledAt` | `string \| null` | Lifecycle timestamps (ISO 8601). |
@@ -56,14 +56,15 @@ const subscription = await vatly.subscriptions.update("subscription_abc123", {
 
 ## Cancel a subscription
 
-`POST /v1/subscriptions/{subscriptionId}` (cancel)
+`DELETE /v1/subscriptions/{subscriptionId}` (204: no return value)
 
 ```ts
-const subscription = await vatly.subscriptions.cancel("subscription_abc123");
+await vatly.subscriptions.cancel("subscription_abc123"); // period end
+await vatly.subscriptions.cancel("subscription_other", { immediately: true });
 ```
 
-Depending on your plan configuration this cancels immediately or schedules
-cancellation at period end (with a grace period). Listen for the
+The default schedules cancellation at period end (with a grace period);
+`immediately: true` cancels immediately. Listen for the
 `subscription.canceled_*` webhooks to react.
 
 ## Resume a subscription

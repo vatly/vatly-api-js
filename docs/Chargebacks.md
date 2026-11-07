@@ -40,7 +40,7 @@ for await (const chargeback of vatly.chargebacks.listAll()) {
 
 Chargebacks for a specific order are also available via
 `vatly.orders.listChargebacks(orderId)` and
-`vatly.orders.getChargeback(orderId, chargebackId)` — see [Orders](/docs/Orders.md#chargebacks-on-an-order).
+`vatly.orders.getChargeback(orderId, chargebackId)` — see [Orders](Orders.md#chargebacks-on-an-order).
 
 ## Reacting to disputes
 

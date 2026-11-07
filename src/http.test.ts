@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   aCreateCheckoutRequest,
   aCreateCustomerRequest,
@@ -8,9 +8,12 @@ import { VatlyClient } from "./client.js";
 import {
   VatlyApiError,
   VatlyAuthError,
+  VatlyConflictError,
+  VatlyConnectionError,
   VatlyForbiddenError,
   VatlyNotFoundError,
   VatlyRateLimitError,
+  VatlyTimeoutError,
   VatlyValidationError,
 } from "./errors.js";
 import { makeFetchSequence } from "./test-utils.js";
@@ -180,6 +183,125 @@ describe("http", () => {
   });
 
   describe("retries", () => {
+    it.each(["unknown", "parameter_mismatch", undefined])(
+      "never retries a 409 outcome %s",
+      async (outcome) => {
+        const { fetch, calls } = makeFetchSequence([
+          { status: 409, body: { message: "Conflict", details: { idempotency_outcome: outcome } } },
+        ]);
+        const client = makeClient({ fetch, maxRetries: 2 });
+        await expect(client.customers.create({ email: "ada@example.com" })).rejects.toMatchObject({
+          status: 409,
+          details: outcome === undefined ? {} : { idempotency_outcome: outcome },
+        });
+        expect(calls).toHaveLength(1);
+      },
+    );
+
+    it("retries only in-progress conflicts with the exact body and key", async () => {
+      const { fetch, calls } = makeFetchSequence([
+        {
+          status: 409,
+          headers: { "Retry-After": "0" },
+          body: { message: "In progress", details: { idempotency_outcome: "in_progress" } },
+        },
+        { status: 201, body: { id: "ok" } },
+      ]);
+      const client = makeClient({ fetch, maxRetries: 1, idempotencyKeyGenerator: false });
+      const result = await client.customers.create(
+        { email: "ada@example.com" },
+        { headers: { "idempotency-key": "header-key" } },
+      );
+      expect(result.id).toBe("ok");
+      expect(calls).toHaveLength(2);
+      expect(calls[0]).toEqual(calls[1]);
+      expect(calls[0]!.headers["idempotency-key"]).toBe("header-key");
+    });
+
+    it("exposes exhausted in-progress conflicts and Retry-After", async () => {
+      const { fetch } = makeFetchSequence([
+        {
+          status: 409,
+          headers: { "Retry-After": "3" },
+          body: { message: "Wait", details: { idempotency_outcome: "in_progress" } },
+        },
+      ]);
+      await expect(
+        makeClient({ fetch }).customers.create({ email: "ada@example.com" }),
+      ).rejects.toMatchObject({ name: "VatlyConflictError", retryAfter: 3 });
+      await expect(
+        makeClient({ fetch }).customers.create({ email: "ada@example.com" }),
+      ).rejects.toBeInstanceOf(VatlyConflictError);
+    });
+
+    it("keeps timeout active while reading a response body", async () => {
+      const fetch: typeof globalThis.fetch = async (_, init) =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              init!.signal!.addEventListener(
+                "abort",
+                () => controller.error(init!.signal!.reason),
+                { once: true },
+              );
+            },
+          }),
+        );
+      await expect(
+        makeClient({ fetch, timeoutMs: 10 }).orders.get("order_1"),
+      ).rejects.toBeInstanceOf(VatlyTimeoutError);
+    });
+
+    it("aborts during Retry-After without another request", async () => {
+      const controller = new AbortController();
+      const { fetch, calls } = makeFetchSequence([
+        { status: 429, headers: { "Retry-After": "120" }, body: { message: "Wait" } },
+      ]);
+      const promise = makeClient({ fetch, maxRetries: 2 }).orders.get("order_1", {
+        signal: controller.signal,
+      });
+      setTimeout(() => controller.abort(new Error("stop")), 10);
+      await expect(promise).rejects.toBeInstanceOf(VatlyConnectionError);
+      expect(calls).toHaveLength(1);
+    });
+
+    it("honors Retry-After values above 60 seconds", async () => {
+      vi.useFakeTimers();
+      try {
+        const { fetch, calls } = makeFetchSequence([
+          { status: 429, headers: { "Retry-After": "90" }, body: {} },
+          { body: { id: "ok" } },
+        ]);
+        const promise = makeClient({ fetch, maxRetries: 1 }).orders.get("order_1");
+        await vi.advanceTimersByTimeAsync(89_999);
+        expect(calls).toHaveLength(1);
+        await vi.advanceTimersByTimeAsync(1);
+        expect((await promise).id).toBe("ok");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does not fetch when already aborted", async () => {
+      const { fetch, calls } = makeFetchSequence([{ body: {} }]);
+      await expect(
+        makeClient({ fetch }).orders.get("order_1", { signal: AbortSignal.abort("stop") }),
+      ).rejects.toBeInstanceOf(VatlyConnectionError);
+      expect(calls).toHaveLength(0);
+    });
+
+    it("rejects invalid JSON success responses rather than returning a false resource type", async () => {
+      const { fetch, calls } = makeFetchSequence([{ body: "<html>proxy error</html>" }]);
+      await expect(
+        makeClient({ fetch, maxRetries: 2 }).orders.get("order_1"),
+      ).rejects.toMatchObject({
+        name: "VatlyApiError",
+        status: 200,
+        body: "<html>proxy error</html>",
+      });
+      expect(calls).toHaveLength(1);
+    });
+
     it("retries 429 with Retry-After backoff and then succeeds", async () => {
       const { fetch, calls } = makeFetchSequence([
         { status: 429, headers: { "Retry-After": "0" }, body: { message: "slow" } },

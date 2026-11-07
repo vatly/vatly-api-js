@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
+
+# Dependencies and build output are restored with the orb; never reinstall here.
+# This SDK has no services or authentication to reconnect on wake.
+node --version
+pnpm --version
+if [[ ! -d node_modules ]]; then
+  echo "Dependencies are missing; run .agents/setup to restore them." >&2
+  exit 1
+fi

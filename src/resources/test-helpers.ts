@@ -22,17 +22,10 @@ export class TestHelpersResource extends BaseResource {
     }
   }
 
-  /**
-   * POST /test-helpers/subscriptions/{id}/fast-forward-renewal
-   *
-   * Advances the subscription's billing cycle and creates a local pending
-   * renewal payment. Pass a body to simulate a deterministic payment outcome:
-   * `{ paymentStatus: "paid" }` settles the renewal; `{ paymentStatus: "failed",
-   * failureReason? }` declines it and starts payment recovery.
-   */
+  /** POST /test-helpers/subscriptions/{id}/fast-forward-renewal */
   async fastForwardRenewal(
     subscriptionId: string,
-    body?: FastForwardSubscriptionRenewalRequest,
+    body: FastForwardSubscriptionRenewalRequest = {},
     opts?: RequestOptions,
   ): Promise<Subscription> {
     this.assertTestMode("fastForwardRenewal");
@@ -46,15 +39,7 @@ export class TestHelpersResource extends BaseResource {
     );
   }
 
-  /**
-   * POST /test-helpers/orders/{orderId}/simulate-payment
-   *
-   * Settles or declines a test order's pending payment. Only works on orders
-   * charged to a saved payment method (subscription renewals, immediately
-   * invoiced subscription updates). Replaces the old `simulatePaymentFailure`
-   * helper on `/test-helpers/mandated-payments/{id}/simulate-failure`, which
-   * the API no longer exposes.
-   */
+  /** POST /test-helpers/orders/{orderId}/simulate-payment */
   async simulateOrderPayment(
     orderId: string,
     body: SimulateOrderPaymentRequest,

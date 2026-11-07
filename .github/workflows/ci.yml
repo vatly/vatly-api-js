@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ["20", "22"]
+        node: ["20", "22", "24"]
 
     steps:
       - uses: actions/checkout@v4
@@ -36,11 +36,17 @@ jobs:
       - name: Typecheck
         run: pnpm run typecheck
 
+      - name: Verify generated contract (offline)
+        run: pnpm gen:check
+
       - name: Test
         run: pnpm test
 
       - name: Build
         run: pnpm run build
+
+      - name: Test installed npm package
+        run: pnpm test:package
 
       - name: Lint
         if: matrix.node == '20'

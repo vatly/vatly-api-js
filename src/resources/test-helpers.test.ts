@@ -27,14 +27,14 @@ describe("testHelpers", () => {
     ).rejects.toThrow(/can only be called with a test-mode API key/);
   });
 
-  it("fastForwardRenewal POSTs with no body by default", async () => {
+  it("fastForwardRenewal POSTs with an empty body by default", async () => {
     const { client, calls } = makeTestClient([{ status: 200, body: { id: "sub_1" } }]);
 
     await client.testHelpers.fastForwardRenewal("sub_1");
 
     expect(calls[0]!.method).toBe("POST");
     expect(calls[0]!.url).toContain("/test-helpers/subscriptions/sub_1/fast-forward-renewal");
-    expect(calls[0]!.body).toBeUndefined();
+    expect(JSON.parse(calls[0]!.body!)).toEqual({});
   });
 
   it("fastForwardRenewal forwards a paymentStatus body", async () => {

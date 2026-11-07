@@ -25,6 +25,13 @@ on [`WebhookEventName`](../src/webhooks/events.ts).
 | `subscription.canceled_with_grace_period` | Subscription | Canceled; access until period end. |
 | `subscription.cancellation_grace_period_completed` | Subscription | Grace period ended. |
 | `subscription.resumed` | Subscription | A canceled subscription was resumed. |
+| `subscription.canceled_for_nonpayment` | Subscription | Payment recovery exhausted. |
+| `subscription.updated` | Subscription | Immediate/scheduled change or renewal; inspect `reason`. |
+| `subscription.update_scheduled` | Subscription | Change scheduled; inspect `scheduledUpdate`. |
+| `one_off_product.update_submitted` / `update_approved` / `update_rejected` | OneOffProduct | Product change review lifecycle (each suffix uses the same prefix). |
+| `one_off_product.archived` / `unarchived` | OneOffProduct | Product availability changed. |
+| `subscription_plan.update_submitted` / `update_approved` / `update_rejected` | SubscriptionPlan | Plan change review lifecycle. |
+| `subscription_plan.archived` / `unarchived` | SubscriptionPlan | Plan availability changed. |
 | `checkout.paid` | Checkout | Checkout was paid. |
 | `checkout.failed` | Checkout | Checkout payment failed. |
 | `checkout.canceled` | Checkout | Checkout was canceled. |
@@ -40,7 +47,7 @@ resource — no casts, no follow-up API call (Vatly sends fat, signed payloads, 
 `object` is the full `GET /…/{id}` snapshot).
 
 ```ts
-import { constructWebhookEventFromRequest } from "@vatly/sdk/webhooks";
+import { constructWebhookEventFromRequest } from "@getvatly/sdk/webhooks";
 
 export async function POST(request: Request): Promise<Response> {
   let event;
@@ -100,12 +107,35 @@ Vatly-Event-Id:  webhook_event_Qk8pRtSvWm2NjLhYcZaE
 The SDK is stateless — it can't remember which events it has verified. The
 clock-skew check bounds how long a leaked signature is replayable, but does not
 stop replays inside that window. For full replay defense, dedupe on the
-retry-stable `Vatly-Event-Id` (also surfaced as `event.id`) in your own store:
+retry-stable, signed `event.id` in your own store after verification. The
+`Vatly-Event-Id` header is not signed and is for correlation only:
 
 ```ts
-const eventId = request.headers.get("Vatly-Event-Id");
+const event = await constructWebhookEventFromRequest(request, secret);
+const eventId = event.id;
 if (await store.has(eventId)) return new Response("ok"); // already processed
 ```
+
+Record successful processing and deduplication atomically; do not mark an event
+complete before its business effects succeed. Concurrent deliveries need a
+unique constraint or equivalent transactional claim in your store.
+
+## Manage webhook endpoints
+
+```ts
+const endpoint = await vatly.webhookEndpoints.create({
+  url: "https://yourapp.com/api/webhooks/vatly",
+  secret: process.env.VATLY_WEBHOOK_SECRET!,
+  enabledEvents: ["order.paid", "subscription.updated"],
+});
+await vatly.webhookEndpoints.update(endpoint.id, { enabledEvents: [] }); // dormant
+const page = await vatly.webhookEndpoints.list();
+await vatly.webhookEndpoints.delete(endpoint.id); // 204
+```
+
+Secrets are write-only: store the one you supplied. HTTPS URLs must be unique
+within the storefront/mode, with up to five endpoints per mode. New event names
+are not automatically subscribed; update `enabledEvents` explicitly.
 
 ## Rotating secrets
 

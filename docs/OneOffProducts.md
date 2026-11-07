@@ -1,6 +1,7 @@
 # One-Off Products
 
-One-off products are single-purchase items (no recurring billing). Like subscription plans, they're defined in the Vatly Dashboard and exposed read-only through the API.
+One-off products are single-purchase items (no recurring billing). They can be
+created, updated, archived, and unarchived through the API.
 
 > **Authoritative field reference.** This page covers the common cases. The complete, canonical schema lives in the [OpenAPI spec](https://docs.vatly.com/openapi.yaml) (see the `OneOffProduct` schema). When in doubt, trust the spec.
 
@@ -13,7 +14,7 @@ One-off products are single-purchase items (no recurring billing). Like subscrip
 | `name` | `string` | Display name. |
 | `description` | `string \| null` | Optional description. |
 | `basePrice` | `Money` | Price, e.g. `{ value: "49.00", currency: "EUR" }`. |
-| `status` | `string` | e.g. `active` or `archived`. |
+| `status` | `string` | `active`, `pending`, or `rejected`. Archive state is separate in `archivedAt`. |
 | `createdAt` | `string` | Creation timestamp (ISO 8601). |
 | `testmode` | `boolean` | Whether this is a test product. |
 
@@ -37,4 +38,21 @@ for await (const product of vatly.oneOffProducts.listAll()) {
 }
 ```
 
-To sell a one-off product, pass its `id` in a [checkout](/docs/Checkouts.md)'s `products`.
+To sell a one-off product, pass its `id` in a [checkout](Checkouts.md)'s `products`.
+
+## Create, update and archive
+
+```ts
+const product = await vatly.oneOffProducts.create({
+  name: "Premium License", description: "Lifetime access", productType: "saas",
+  basePrice: { value: "99.00", currency: "EUR" }, taxBehavior: "exclusive",
+});
+await vatly.oneOffProducts.update(product.id, { name: "Premium License v2" });
+await vatly.oneOffProducts.archive(product.id); // 204: no return value
+const restored = await vatly.oneOffProducts.unarchive(product.id);
+const all = await vatly.oneOffProducts.list({ includeArchived: true });
+```
+
+`productType` is `saas` or `ebook`. Creation and updates may require approval;
+inspect `status`, `pendingUpdates`, and `updateStatus` rather than assuming the
+requested values are already live. `taxBehavior` is immutable after creation.
