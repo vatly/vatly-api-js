@@ -68,7 +68,7 @@ main().catch(error => { console.error(error); process.exitCode = 1; });
 
   const consumer = `
 import { VatlyClient, fromMinorUnits, type SubscriptionBillingUpdateLink, type Subscription, type PortalSession, type RequestOptions, type CreateOneOffProductRequest } from "@getvatly/sdk";
-import { constructWebhookEvent, type VatlyWebhookEvent } from "@getvatly/sdk/webhooks";
+import { constructWebhookEvent, isKnownWebhookEvent, type MaybeUnsupportedWebhookEvent, type VatlyWebhookEvent } from "@getvatly/sdk/webhooks";
 const client = new VatlyClient({ apiKey: "test_abcdefghij0123456789" });
 const options: RequestOptions = { timeoutMs: 1000 };
 const canceled: Promise<void> = client.subscriptions.cancel("sub_1", { ...options, immediately: true });
@@ -80,10 +80,12 @@ client.oneOffProducts.create(product);
 client.oneOffProducts.create({ ...product, basePrice: fromMinorUnits(1234n, "EUR") });
 client.testHelpers.fastForwardRenewal("sub_1", { paymentStatus: "paid" });
 client.testHelpers.simulateOrderPayment("order_1", { paymentStatus: "failed" });
-const event: Promise<VatlyWebhookEvent> = constructWebhookEvent("{}", "signature", "secret");
-function handle(e: VatlyWebhookEvent) {
-  if (e.eventName === "subscription.updated") { const sub: Subscription = e.object; return sub.scheduledUpdate; }
-  if (e.eventName === "one_off_product.archived") return e.object.archivedAt;
+const event: Promise<MaybeUnsupportedWebhookEvent> = constructWebhookEvent("{}", "signature", "secret");
+function handle(e: MaybeUnsupportedWebhookEvent) {
+  if (!isKnownWebhookEvent(e)) return e.eventName;
+  const known: VatlyWebhookEvent = e;
+  if (known.eventName === "subscription.updated") { const sub: Subscription = known.object; return sub.scheduledUpdate; }
+  if (known.eventName === "one_off_product.archived") return known.object.archivedAt;
 }
 // @ts-expect-error paymentStatus is required
 client.testHelpers.simulateOrderPayment("order_1", {});
