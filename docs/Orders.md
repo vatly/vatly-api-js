@@ -10,7 +10,7 @@ An order is the transaction record created when a checkout is paid. It carries t
 | --- | --- | --- |
 | `id` | `string` | Unique identifier (`order_…`). |
 | `customerId` | `string \| null` | The customer this order belongs to. |
-| `status` | `string` | e.g. `paid`, `canceled`, `payment_failed`. |
+| `status` | `string` | `created`, `pending`, `paid`, `canceled`, or `expired`. Payment recovery is signaled by `order.payment_failed`, not a status of that name. |
 | `total` | `Money` | Gross amount (incl. tax). |
 | `subtotal` | `Money` | Net amount (excl. tax). |
 | `reversedSubtotal` | `Money` | Net amount already reversed via refunds/chargebacks. |
@@ -79,7 +79,7 @@ const one = await vatly.orders.getRefund("order_abc123", "refund_abc123");
 await vatly.orders.cancelRefund("order_abc123", "refund_abc123"); // only while pending
 ```
 
-See [Refunds](/docs/Refunds.md) for the top-level refund endpoints.
+See [Refunds](Refunds.md) for the top-level refund endpoints.
 
 ## Chargebacks on an order
 
@@ -88,4 +88,4 @@ const page = await vatly.orders.listChargebacks("order_abc123");
 const chargeback = await vatly.orders.getChargeback("order_abc123", "chargeback_abc123");
 ```
 
-See [Chargebacks](/docs/Chargebacks.md) for the top-level chargeback endpoints.
+See [Chargebacks](Chargebacks.md) for the top-level chargeback endpoints.

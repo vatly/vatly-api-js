@@ -21,6 +21,16 @@ function listPage(ids: string[], next: string | null) {
 }
 
 describe("pagination", () => {
+  it("rejects repeated cursors instead of looping forever", async () => {
+    const { fetch, calls } = makeFetchSequence([{ body: listPage(["a"], "a") }]);
+    const client = new VatlyClient({ apiKey: "test_abcdefghij0123456789", fetch });
+    const iterator = client.checkouts.listAll();
+    expect((await iterator.next()).value!.id).toBe("a");
+    expect((await iterator.next()).value!.id).toBe("a");
+    await expect(iterator.next()).rejects.toThrow(/repeated pagination cursor/);
+    expect(calls).toHaveLength(2);
+  });
+
   it("extracts startingAfter from a next link", () => {
     expect(
       extractStartingAfter("https://api.example.com/v1/checkouts?startingAfter=co_42&limit=10"),

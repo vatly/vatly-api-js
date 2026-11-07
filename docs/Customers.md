@@ -38,11 +38,12 @@ const customer = await vatly.customers.create({
 });
 ```
 
-Email domains are sent as ASCII (Punycode). To convert a Unicode address
-yourself, use the `encodeEmail` helper:
+Unicode domains are accepted directly; Vatly lowercases the local part and
+canonicalizes the domain to lowercase Punycode. Creating an already-known email
+returns the existing customer unchanged. To encode a domain yourself, optionally use:
 
 ```ts
-import { encodeEmail } from "@vatly/sdk";
+import { encodeEmail } from "@getvatly/sdk";
 
 encodeEmail("user@bücher.de"); // → "user@xn--bcher-kva.de"
 ```
@@ -54,6 +55,21 @@ encodeEmail("user@bücher.de"); // → "user@xn--bcher-kva.de"
 ```ts
 const customer = await vatly.customers.get("customer_abc123");
 ```
+
+## Update identity and open the hosted portal
+
+```ts
+await vatly.customers.update("customer_abc123", { name: "Ada", email: "ada@example.com" });
+const session = await vatly.customers.createPortalSession("customer_abc123", {
+  returnUrl: "https://yourapp.com/account",
+});
+// Redirect the customer's browser to session.url. It is short-lived and single-use.
+```
+
+Updates accept name/email, not billing addresses. Portal settings are optional;
+`returnUrl` must be an absolute HTTPS URL without credentials, sent in the JSON
+body (not query params), at most 2,048 UTF-8 bytes. Authenticate your own customer
+before issuing a portal session, and never log or persist its credential URL.
 
 ## List customers
 

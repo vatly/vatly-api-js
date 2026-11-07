@@ -1,6 +1,6 @@
 name: Release
 
-# Publishes @vatly/sdk to npm when a GitHub Release is published.
+# Publishes @getvatly/sdk to npm when a GitHub Release is published.
 # Tag the release `vX.Y.Z` matching package.json's version.
 #
 # Requires repo secret NPM_TOKEN (an npm automation token with publish rights).
@@ -51,8 +51,17 @@ jobs:
       - name: Lint
         run: pnpm run lint
 
-      # `prepublishOnly` builds dist/; `publishConfig` carries access + provenance.
+      - name: Verify generated contract (offline)
+        run: pnpm gen:check
+
+      - name: Build and test package
+        run: pnpm build && pnpm test:package
+
+      # Explicitly route prereleases to alpha, never npm's latest dist-tag.
       - name: Publish
-        run: npm publish --provenance --access public
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          if [[ "$VERSION" == *-* ]]; then DIST_TAG=alpha; else DIST_TAG=latest; fi
+          npm publish --provenance --access public --tag "$DIST_TAG"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

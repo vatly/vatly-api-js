@@ -12,7 +12,7 @@
  * when you save it.
  */
 
-import { constructWebhookEventFromRequest } from "@vatly/sdk/webhooks";
+import { constructWebhookEventFromRequest } from "@getvatly/sdk/webhooks";
 
 export async function POST(request: Request): Promise<Response> {
   const secret = process.env.VATLY_WEBHOOK_SECRET;
@@ -27,7 +27,7 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   // Optional but recommended: dedupe on the retry-stable event id.
-  // const eventId = request.headers.get("Vatly-Event-Id");
+  // const eventId = event.id; // verified payload, not an untrusted header
   // if (await store.seen(eventId)) return new Response("ok");
 
   switch (event.eventName) {

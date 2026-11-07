@@ -2,7 +2,7 @@
  * Convenience re-exports of generated schemas so consumers don't need to
  * navigate `components["schemas"]["..."]` manually.
  */
-import type { components } from "./generated/schema.js";
+import type { components, operations } from "./generated/schema.js";
 
 type Schemas = components["schemas"];
 
@@ -12,9 +12,22 @@ export type CreateCheckoutRequest = Schemas["CreateCheckoutRequest"];
 
 export type Customer = Schemas["Customer"];
 export type CreateCustomerRequest = Schemas["CreateCustomerRequest"];
+export type UpdateCustomerRequest = Schemas["UpdateCustomerRequest"];
+export type CreatePortalSessionRequest = Schemas["CreatePortalSessionRequest"];
+export type PortalSession = Schemas["PortalSession"];
 
 export type OneOffProduct = Schemas["OneOffProduct"];
+export type CreateOneOffProductRequest = Schemas["CreateOneOffProductRequest"];
+export type UpdateOneOffProductRequest = Schemas["UpdateOneOffProductRequest"];
 export type SubscriptionPlan = Schemas["SubscriptionPlan"];
+export type CreateSubscriptionPlanRequest = Schemas["CreateSubscriptionPlanRequest"];
+export type UpdateSubscriptionPlanRequest = Schemas["UpdateSubscriptionPlanRequest"];
+export type OneOffProductListParams = NonNullable<
+  operations["listOneOffProducts"]["parameters"]["query"]
+>;
+export type SubscriptionPlanListParams = NonNullable<
+  operations["listSubscriptionPlans"]["parameters"]["query"]
+>;
 
 export type Order = Schemas["Order"];
 export type OrderLine = Schemas["OrderLine"];
@@ -31,6 +44,16 @@ export type Chargeback = Schemas["Chargeback"];
 export type Subscription = Schemas["Subscription"];
 export type UpdateSubscriptionRequest = Schemas["UpdateSubscriptionRequest"];
 export type UpdateSubscriptionBillingRequest = Schemas["UpdateSubscriptionBillingRequest"];
+export type SubscriptionBillingUpdateLink =
+  operations["createSubscriptionBillingUpdateLink"]["responses"][200]["content"]["application/json"];
+export type CancelSubscriptionParams = NonNullable<
+  operations["cancelSubscription"]["parameters"]["query"]
+>;
+export type Mandate = Schemas["Mandate"];
+export type FastForwardSubscriptionRenewalRequest =
+  Schemas["FastForwardSubscriptionRenewalRequest"];
+export type SimulateOrderPaymentRequest = Schemas["SimulateOrderPaymentRequest"];
+export type EurMoney = Schemas["EurMoney"];
 
 /**
  * The persisted webhook event resource, as returned by `GET /webhook-events`.
@@ -49,6 +72,10 @@ export type WebhookEvent = Schemas["WebhookEvent"];
 export type WebhookDelivery = Schemas["WebhookDelivery"];
 
 export type Webhook = Schemas["Webhook"];
+export type WebhookEndpoint = Schemas["WebhookEndpoint"];
+export type CreateWebhookEndpointRequest = Schemas["CreateWebhookEndpointRequest"];
+export type UpdateWebhookEndpointRequest = Schemas["UpdateWebhookEndpointRequest"];
+export type WebhookSubscriptionEventName = Schemas["WebhookSubscriptionEventName"];
 
 export type BillingAddress = Schemas["BillingAddress"];
 export type BillingDetails = Schemas["BillingDetails"];

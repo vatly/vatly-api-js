@@ -7,12 +7,9 @@
  * precision loss. If you need to do arithmetic, use a decimal library
  * (decimal.js, big.js, dinero.js) or convert to integer minor units first.
  */
-export interface Money {
-  /** Decimal string, e.g. "29.00". Two-decimal precision per the spec pattern. */
-  value: string;
-  /** ISO 4217 currency code, e.g. "EUR". */
-  currency: string;
-}
+import type { components } from "./generated/schema.js";
+
+export type Money = components["schemas"]["Money"];
 
 /**
  * Convert a Money value to an integer count of minor units (e.g. cents).
@@ -22,6 +19,8 @@ export interface Money {
  * @example toMinorUnits({ value: "29.00", currency: "EUR" }) // -> 2900n
  */
 export function toMinorUnits(money: Money, decimals = 2): bigint {
+  if (!Number.isSafeInteger(decimals) || decimals < 0)
+    throw new RangeError("decimals must be a non-negative safe integer.");
   if (!/^\d+(\.\d{1,})?$/.test(money.value)) {
     throw new TypeError(`Invalid Money value: ${money.value}`);
   }
@@ -40,8 +39,16 @@ export function toMinorUnits(money: Money, decimals = 2): bigint {
  *
  * @example fromMinorUnits(2900n, "EUR") // -> { value: "29.00", currency: "EUR" }
  */
-export function fromMinorUnits(minor: bigint | number, currency: string, decimals = 2): Money {
-  const big = typeof minor === "bigint" ? minor : BigInt(Math.trunc(minor));
+export function fromMinorUnits<C extends Money["currency"]>(
+  minor: bigint | number,
+  currency: C,
+  decimals = 2,
+): Money & { currency: C } {
+  if (!Number.isSafeInteger(decimals) || decimals < 0)
+    throw new RangeError("decimals must be a non-negative safe integer.");
+  if (typeof minor === "number" && !Number.isSafeInteger(minor))
+    throw new RangeError("Money minor units must be a safe integer; use bigint for large amounts.");
+  const big = typeof minor === "bigint" ? minor : BigInt(minor);
   if (big < 0n) {
     throw new RangeError("Money minor units cannot be negative.");
   }

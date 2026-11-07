@@ -8,14 +8,12 @@
  * cursor and pass it back to the same list method.
  */
 
+import type { PaginationLinks } from "./types.js";
+
 export interface PaginatedList<T> {
   data: T[];
   count: number;
-  links: {
-    self: { href: string };
-    next: { href: string } | null;
-    prev: { href: string } | null;
-  };
+  links: PaginationLinks;
 }
 
 export interface ListParams {
@@ -36,6 +34,8 @@ export async function* paginate<T, P extends ListParams = ListParams>(
 ): AsyncIterableIterator<T> {
   let cursor: string | undefined = params.startingAfter;
   let first = true;
+  const seen = new Set<string>();
+  if (cursor) seen.add(cursor);
 
   while (true) {
     const pageParams: P = first
@@ -48,7 +48,8 @@ export async function* paginate<T, P extends ListParams = ListParams>(
 
     if (!page.links.next) return;
     const next = extractStartingAfter(page.links.next.href);
-    if (!next) return; // Defensive — don't loop forever if server returns a malformed cursor.
+    if (!next || seen.has(next)) throw new Error("Vatly: invalid or repeated pagination cursor.");
+    seen.add(next);
     cursor = next;
   }
 }
@@ -56,7 +57,7 @@ export async function* paginate<T, P extends ListParams = ListParams>(
 /** Pull the `startingAfter` query value out of a next-link URL. */
 export function extractStartingAfter(href: string): string | undefined {
   try {
-    const url = new URL(href);
+    const url = new URL(href, "https://api.vatly.com");
     return url.searchParams.get("startingAfter") ?? undefined;
   } catch {
     return undefined;

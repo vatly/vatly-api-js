@@ -57,11 +57,11 @@ export interface VatlyClientOptions {
    */
   userAgent?: string;
   /**
-   * Generator for automatic `Idempotency-Key` headers on POST and PATCH.
+   * Generator for automatic `Idempotency-Key` headers on POST, PATCH, and DELETE.
    * - Default: a UUID v4 from `crypto.randomUUID()`.
    * - Pass a function to customize (e.g. inject a request-id from a tracer).
    * - Pass `false` to disable auto-generation; callers must then opt in
-   *   per-call via `opts.idempotencyKey`. POST/PATCH without a key will not
+   *   per-call via `opts.idempotencyKey`. Mutations without a key will not
    *   be retried by the SDK.
    */
   idempotencyKeyGenerator?: IdempotencyKeyGenerator | false;
@@ -70,7 +70,7 @@ export interface VatlyClientOptions {
    * Merged on top of the auto-detected `runtime` / `os` / `arch` defaults:
    *
    *   new VatlyClient({ clientInfo: { app: "MyApp/1.2.3", framework: "Next.js/14" } });
-   *   // Vatly-Client-Info: sdk=vatly-sdk-js/0.2.0; runtime=node/v25.9.0; os=darwin; arch=arm64; app=MyApp/1.2.3; framework=Next.js/14
+   *   // Vatly-Client-Info: sdk=vatly-sdk-js/0.3.0-alpha.1; runtime=node/v25.9.0; os=darwin; arch=arm64; app=MyApp/1.2.3; framework=Next.js/14
    *
    * Pass `false` to omit the header entirely. If you need more named fields
    * (e.g. `region`, `cloud`), open an issue — we'll add them as constrained
@@ -104,7 +104,7 @@ export interface ResolvedConfig {
   idempotencyKeyGenerator: IdempotencyKeyGenerator | undefined;
 }
 
-export const SDK_VERSION = "0.2.0";
+export const SDK_VERSION = "0.3.0-alpha.1";
 
 function readEnvApiKey(): string | undefined {
   // `process` is undefined on some edge runtimes (Cloudflare Workers w/o nodejs_compat).
@@ -150,6 +150,13 @@ export function resolveConfig(options: VatlyClientOptions = {}): ResolvedConfig 
     options.idempotencyKeyGenerator === false
       ? undefined
       : (options.idempotencyKeyGenerator ?? defaultIdempotencyKeyGenerator);
+
+  if (!Number.isFinite(options.timeoutMs ?? 30_000) || (options.timeoutMs ?? 30_000) < 0) {
+    throw new RangeError("timeoutMs must be finite and non-negative.");
+  }
+  if (!Number.isSafeInteger(options.maxRetries ?? 2) || (options.maxRetries ?? 2) < 0) {
+    throw new RangeError("maxRetries must be a non-negative safe integer.");
+  }
 
   return {
     apiKey,

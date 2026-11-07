@@ -7,7 +7,7 @@
  * Uses a `test_`-prefixed key so nothing real is charged.
  */
 
-import { VatlyClient, VatlyValidationError } from "@vatly/sdk";
+import { VatlyClient, VatlyValidationError } from "@getvatly/sdk";
 
 const vatly = new VatlyClient({
   apiKey: process.env.VATLY_API_KEY, // must start with live_ or test_

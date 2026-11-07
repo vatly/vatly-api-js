@@ -33,9 +33,8 @@ export interface RequestOptions {
  * Used between retry attempts. `attempt` is 0-indexed (first retry = 0).
  */
 function backoffDelay(attempt: number, retryAfterSec?: number): number {
-  if (retryAfterSec && retryAfterSec > 0) {
-    // Cap server-supplied delay at 60s to avoid pathological waits.
-    return Math.min(retryAfterSec * 1000, 60_000);
+  if (retryAfterSec !== undefined) {
+    return retryAfterSec * 1000;
   }
   const base = 250 * 2 ** attempt; // 250ms, 500ms, 1s, 2s, ...
   const capped = Math.min(base, 8_000);
@@ -45,8 +44,8 @@ function backoffDelay(attempt: number, retryAfterSec?: number): number {
 
 function parseRetryAfter(header: string | null): number | undefined {
   if (!header) return undefined;
-  const asInt = Number.parseInt(header, 10);
-  if (Number.isFinite(asInt) && asInt >= 0) return asInt;
+  const asInt = /^\d+$/.test(header.trim()) ? Number(header) : Number.NaN;
+  if (Number.isFinite(asInt)) return asInt;
   // HTTP-date form: convert to seconds-from-now.
   const asDate = Date.parse(header);
   if (Number.isFinite(asDate)) {
@@ -86,7 +85,15 @@ export async function performRequest<T>(
 
   // Resolve the Idempotency-Key value (caller > auto-generator > none).
   // POST and PATCH get auto-keys by default — matches vatly/vatly-api-php.
-  let idempotencyKey = options.idempotencyKey;
+  const baseHeaders = new Headers({
+    Authorization: `Bearer ${config.apiKey}`,
+    Accept: "application/json",
+    "User-Agent": config.userAgent,
+  });
+  for (const headers of [config.defaultHeaders, options.headers]) {
+    for (const [key, value] of Object.entries(headers ?? {})) baseHeaders.set(key, value);
+  }
+  let idempotencyKey = options.idempotencyKey ?? baseHeaders.get("Idempotency-Key") ?? undefined;
   if (
     idempotencyKey === undefined &&
     IDEMPOTENT_METHODS.has(method) &&
@@ -98,33 +105,30 @@ export async function performRequest<T>(
   // Per spec guidance: never retry non-idempotent POST/PATCH without an idempotency key.
   const retryable = safe || hasIdemKey;
 
-  const baseHeaders: Record<string, string> = {
-    Authorization: `Bearer ${config.apiKey}`,
-    Accept: "application/json",
-    "User-Agent": config.userAgent,
-    ...config.defaultHeaders,
-    ...options.headers,
-  };
-
   if (config.clientInfoHeader) {
-    baseHeaders["Vatly-Client-Info"] = config.clientInfoHeader;
+    baseHeaders.set("Vatly-Client-Info", config.clientInfoHeader);
   }
 
   if (req.body !== undefined) {
-    baseHeaders["Content-Type"] = "application/json";
+    baseHeaders.set("Content-Type", "application/json");
   }
   if (hasIdemKey) {
-    baseHeaders["Idempotency-Key"] = idempotencyKey!;
+    baseHeaders.set("Idempotency-Key", idempotencyKey!);
   }
 
   const serializedBody = req.body === undefined ? undefined : JSON.stringify(req.body);
   const timeoutMs = options.timeoutMs ?? config.timeoutMs;
+  if (!Number.isFinite(timeoutMs) || timeoutMs < 0)
+    throw new RangeError("timeoutMs must be finite and non-negative.");
 
   let lastError: unknown;
   const maxAttempts = retryable ? config.maxRetries + 1 : 1;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (options.signal?.aborted)
+      throw new VatlyConnectionError("Request aborted by caller.", options.signal.reason);
     const { signal, cancel } = makeSignal(timeoutMs, options.signal);
+    let delay: number | undefined;
     try {
       const response = await config.fetch(url, {
         method,
@@ -132,76 +136,69 @@ export async function performRequest<T>(
         body: serializedBody,
         signal,
       });
-      cancel();
-
       if (response.ok) {
-        return (await parseResponse<T>(response)) as T;
+        return (await parseResponse<T>(response, url, method)) as T;
       }
 
       const retryAfter = parseRetryAfter(response.headers.get("Retry-After"));
+      const error = await errorFromHttpResponse(response, url, method, retryAfter);
       const shouldRetry =
         retryable &&
         attempt < maxAttempts - 1 &&
-        (response.status === 429 || response.status >= 500);
+        (response.status === 429 ||
+          response.status >= 500 ||
+          (hasIdemKey &&
+            response.status === 409 &&
+            error.details?.idempotency_outcome === "in_progress"));
 
       if (shouldRetry) {
-        await sleep(backoffDelay(attempt, retryAfter));
-        continue;
+        delay = backoffDelay(attempt, retryAfter);
+        lastError = error;
+      } else {
+        throw error;
       }
-
-      throw await errorFromHttpResponse(response, url, method, retryAfter);
     } catch (err) {
-      cancel();
-      if (err instanceof VatlyError) {
-        if (!(retryable && attempt < maxAttempts - 1 && err.status >= 500)) {
-          throw err;
-        }
-        lastError = err;
-        await sleep(backoffDelay(attempt));
-        continue;
-      }
+      if (err instanceof VatlyError) throw err;
 
       // Network-layer failure or abort.
-      const isAbort = isAbortError(err);
-      if (isAbort && options.signal?.aborted) {
+      if (options.signal?.aborted) {
         throw new VatlyConnectionError("Request aborted by caller.", err);
       }
-      if (isAbort) {
-        const timeoutErr = new VatlyTimeoutError(timeoutMs, err);
-        if (retryable && attempt < maxAttempts - 1) {
-          lastError = timeoutErr;
-          await sleep(backoffDelay(attempt));
-          continue;
-        }
-        throw timeoutErr;
-      }
-
-      const connErr = new VatlyConnectionError(
-        err instanceof Error ? err.message : "Network request failed.",
-        err,
-      );
+      const connErr =
+        signal.aborted || isAbortError(err)
+          ? new VatlyTimeoutError(timeoutMs, err)
+          : new VatlyConnectionError(
+              err instanceof Error ? err.message : "Network request failed.",
+              err,
+            );
       if (retryable && attempt < maxAttempts - 1) {
         lastError = connErr;
-        await sleep(backoffDelay(attempt));
-        continue;
+        delay = backoffDelay(attempt);
+      } else {
+        throw connErr;
       }
-      throw connErr;
+    } finally {
+      cancel();
     }
+    await sleep(delay!, options.signal);
   }
 
   // Should be unreachable, but TypeScript can't prove it.
   throw lastError instanceof Error ? lastError : new VatlyApiError({ status: 0, url, method });
 }
 
-async function parseResponse<T>(response: Response): Promise<T | undefined> {
+async function parseResponse<T>(
+  response: Response,
+  url: string,
+  method: string,
+): Promise<T | undefined> {
   if (response.status === 204) return undefined;
   const text = await response.text();
   if (text.length === 0) return undefined;
   try {
     return JSON.parse(text) as T;
   } catch {
-    // The spec contract is JSON; a non-JSON 2xx is a server bug — surface raw.
-    return text as unknown as T;
+    throw new VatlyApiError({ status: response.status, body: text, url, method });
   }
 }
 
@@ -258,8 +255,20 @@ function isAbortError(err: unknown): boolean {
   return name === "AbortError" || name === "TimeoutError";
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      reject(new VatlyConnectionError("Request aborted by caller.", signal?.reason));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    if (signal?.aborted) onAbort();
+    else signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 export function buildUrl(

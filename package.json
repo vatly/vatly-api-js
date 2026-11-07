@@ -1,6 +1,6 @@
 {
-  "name": "@vatly/sdk",
-  "version": "0.2.0",
+  "name": "@getvatly/sdk",
+  "version": "0.3.0-alpha.1",
   "description": "Official TypeScript SDK for Vatly, the Merchant of Record for European software and digital products",
   "license": "MIT",
   "repository": {
@@ -17,19 +17,33 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     },
     "./webhooks": {
-      "types": "./dist/webhooks.d.ts",
-      "import": "./dist/webhooks.js",
-      "require": "./dist/webhooks.cjs"
+      "import": {
+        "types": "./dist/webhooks.d.ts",
+        "default": "./dist/webhooks.js"
+      },
+      "require": {
+        "types": "./dist/webhooks.d.cts",
+        "default": "./dist/webhooks.cjs"
+      }
     },
     "./package.json": "./package.json"
   },
   "files": [
     "dist",
+    "docs",
+    "examples",
+    "art/banner.png",
+    "openapi.yaml",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"
@@ -41,20 +55,28 @@
   "packageManager": "pnpm@9.15.0",
   "publishConfig": {
     "access": "public",
+    "tag": "alpha",
     "provenance": true
   },
   "scripts": {
     "gen": "node scripts/gen.mjs",
+    "gen:check": "node scripts/gen.mjs --check",
     "build": "tsup",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:package": "node scripts/test-package.mjs",
+    "check": "pnpm gen:check && pnpm typecheck && pnpm lint && pnpm test && pnpm build && pnpm test:package",
     "typecheck": "tsc --noEmit",
     "lint": "biome check src",
     "format": "biome format --write src",
-    "prepublishOnly": "pnpm run build"
+    "prepack": "pnpm run build",
+    "prepublishOnly": "pnpm gen:check && pnpm typecheck && pnpm lint && pnpm test"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["@biomejs/biome", "esbuild"]
+    "onlyBuiltDependencies": [
+      "@biomejs/biome",
+      "esbuild"
+    ]
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
@@ -62,7 +84,8 @@
     "openapi-typescript": "^7.13.0",
     "tsup": "^8.3.0",
     "typescript": "^5.6.0",
-    "vitest": "^2.1.0"
+    "vitest": "^2.1.0",
+    "yaml": "^2.8.1"
   },
   "keywords": [
     "vatly",

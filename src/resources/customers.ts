@@ -1,6 +1,13 @@
 import type { RequestOptions } from "../http.js";
 import type { ListParams, PaginatedList } from "../pagination.js";
-import type { CreateCustomerRequest, Customer, Subscription } from "../types.js";
+import type {
+  CreateCustomerRequest,
+  CreatePortalSessionRequest,
+  Customer,
+  PortalSession,
+  Subscription,
+  UpdateCustomerRequest,
+} from "../types.js";
 import { BaseResource } from "./base.js";
 
 export class CustomersResource extends BaseResource {
@@ -17,6 +24,32 @@ export class CustomersResource extends BaseResource {
 
   create(body: CreateCustomerRequest, opts?: RequestOptions): Promise<Customer> {
     return this.request<Customer>({ method: "POST", path: "/customers", body }, opts);
+  }
+
+  update(
+    customerId: string,
+    body: UpdateCustomerRequest,
+    opts?: RequestOptions,
+  ): Promise<Customer> {
+    return this.request<Customer>(
+      { method: "PATCH", path: `/customers/${encodeURIComponent(customerId)}`, body },
+      opts,
+    );
+  }
+
+  createPortalSession(
+    customerId: string,
+    body: CreatePortalSessionRequest = {},
+    opts?: RequestOptions,
+  ): Promise<PortalSession> {
+    return this.request<PortalSession>(
+      {
+        method: "POST",
+        path: `/customers/${encodeURIComponent(customerId)}/portal-sessions`,
+        body,
+      },
+      opts,
+    );
   }
 
   get(customerId: string, opts?: RequestOptions): Promise<Customer> {

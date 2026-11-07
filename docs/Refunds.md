@@ -1,6 +1,6 @@
 # Refunds
 
-A refund returns funds to a customer for an order. Refunds are **created** against an order (see [Orders](/docs/Orders.md#refunds-on-an-order)); the top-level `refunds` resource lets you list and retrieve them across all orders.
+A refund returns funds to a customer for an order. Refunds are **created** against an order (see [Orders](Orders.md#refunds-on-an-order)); the top-level `refunds` resource lets you list and retrieve them across all orders.
 
 > **Authoritative field reference.** This page covers the common cases. The complete, canonical schema lives in the [OpenAPI spec](https://docs.vatly.com/openapi.yaml) (see the `Refund`, `RefundItem`, and `Money` schemas). When in doubt, trust the spec.
 
@@ -11,7 +11,7 @@ A refund returns funds to a customer for an order. Refunds are **created** again
 | `id` | `string` | Unique identifier (`refund_…`). |
 | `customerId` | `string` | The customer being refunded. |
 | `originalOrderId` | `string` | The order this refund is against. |
-| `status` | `string` | e.g. `pending`, `completed`, `failed`, `canceled`. |
+| `status` | `string` | `pending`, `queued`, `processing`, `refunded`, `failed`, or `canceled`. The success event is `refund.completed`, but the status is `refunded`. |
 | `total` | `Money` | Gross amount refunded (incl. tax). |
 | `subtotal` | `Money` | Net amount refunded (excl. tax). |
 | `taxSummary` | `array` | Per-rate VAT breakdown of the refund. |

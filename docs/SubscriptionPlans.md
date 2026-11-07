@@ -1,6 +1,7 @@
 # Subscription Plans
 
-Subscription plans define the recurring products customers can subscribe to — price, currency, and billing interval. Plans are created in the Vatly Dashboard; the API exposes them read-only.
+Subscription plans define recurring products, prices, and billing intervals.
+The API supports creation, updates, archive and unarchive.
 
 > **Authoritative field reference.** This page covers the common cases. The complete, canonical schema lives in the [OpenAPI spec](https://docs.vatly.com/openapi.yaml) (see the `SubscriptionPlan` schema). When in doubt, trust the spec.
 
@@ -14,7 +15,7 @@ Subscription plans define the recurring products customers can subscribe to — 
 | `description` | `string \| null` | Optional description. |
 | `basePrice` | `Money` | Price per interval, e.g. `{ value: "29.00", currency: "EUR" }`. |
 | `interval` / `intervalCount` | `string` / `number` | Billing cadence (e.g. `month` × 1). |
-| `status` | `string` | e.g. `active` or `archived`. |
+| `status` | `string` | `active`, `pending`, or `rejected`. Archive state is separate in `archivedAt`. |
 | `createdAt` | `string` | Creation timestamp (ISO 8601). |
 | `testmode` | `boolean` | Whether this is a test plan. |
 
@@ -39,4 +40,21 @@ for await (const plan of vatly.subscriptionPlans.listAll()) {
 }
 ```
 
-To sell a plan, pass its `id` in a [checkout](/docs/Checkouts.md)'s `products`.
+To sell a plan, pass its `id` in a [checkout](Checkouts.md)'s `products`.
+
+## Create, update and archive
+
+```ts
+const plan = await vatly.subscriptionPlans.create({
+  name: "Pro Monthly", description: "Pro features", productType: "saas",
+  basePrice: { value: "29.00", currency: "EUR" }, interval: "month", intervalCount: 1,
+});
+await vatly.subscriptionPlans.update(plan.id, { interval: "week", intervalCount: 2 });
+await vatly.subscriptionPlans.archive(plan.id); // 204: no return value
+const restored = await vatly.subscriptionPlans.unarchive(plan.id);
+const all = await vatly.subscriptionPlans.list({ includeArchived: true });
+```
+
+New prices are EUR-only. `taxBehavior` defaults to `exclusive` and is immutable.
+Plans sell `saas` only; `day` intervals are test-mode-only. Creation and updates
+may require approval; inspect `status`, `pendingUpdates`, and `updateStatus`.

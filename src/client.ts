@@ -8,6 +8,7 @@ import { RefundsResource } from "./resources/refunds.js";
 import { SubscriptionPlansResource } from "./resources/subscription-plans.js";
 import { SubscriptionsResource } from "./resources/subscriptions.js";
 import { TestHelpersResource } from "./resources/test-helpers.js";
+import { WebhookEndpointsResource } from "./resources/webhook-endpoints.js";
 import { WebhookEventsResource } from "./resources/webhook-events.js";
 
 export class VatlyClient {
@@ -19,6 +20,7 @@ export class VatlyClient {
   readonly refunds: RefundsResource;
   readonly chargebacks: ChargebacksResource;
   readonly subscriptions: SubscriptionsResource;
+  readonly webhookEndpoints: WebhookEndpointsResource;
   readonly webhookEvents: WebhookEventsResource;
   readonly testHelpers: TestHelpersResource;
 
@@ -35,6 +37,7 @@ export class VatlyClient {
     this.refunds = new RefundsResource(this.config);
     this.chargebacks = new ChargebacksResource(this.config);
     this.subscriptions = new SubscriptionsResource(this.config);
+    this.webhookEndpoints = new WebhookEndpointsResource(this.config);
     this.webhookEvents = new WebhookEventsResource(this.config);
     this.testHelpers = new TestHelpersResource(this.config);
   }

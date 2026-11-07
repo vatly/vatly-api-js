@@ -1,4 +1,4 @@
-![Vatly SDK for JavaScript & TypeScript](https://raw.githubusercontent.com/sandervanhooft/vatly-js/main/art/banner.png)
+![Vatly SDK for JavaScript & TypeScript](../art/banner.png)
 
 # Getting Started
 
@@ -8,11 +8,11 @@ Official TypeScript SDK for the Vatly Merchant of Record API. Handle checkouts, 
 
 ## Installation
 
-Install the SDK from npm.
+Install the alpha once published (package name is `@getvatly/sdk`, not the GitHub organization).
 
 ```bash
-npm install @vatly/sdk
-# or: pnpm add @vatly/sdk / yarn add @vatly/sdk
+npm install @getvatly/sdk@alpha
+# or: pnpm add @getvatly/sdk@alpha / yarn add @getvatly/sdk@alpha
 ```
 
 The package ships ESM + CommonJS builds and its own TypeScript types. It uses the
@@ -36,7 +36,7 @@ The client validates the key format at construction and exposes the detected
 mode on `client.mode` (`"live"` or `"test"`).
 
 ```ts
-import { VatlyClient } from "@vatly/sdk";
+import { VatlyClient } from "@getvatly/sdk";
 
 const vatly = new VatlyClient({
   apiKey: process.env.VATLY_API_KEY, // live_… or test_…
@@ -88,10 +88,11 @@ new VatlyClient({ idempotencyKeyGenerator: false });
 
 ## Retries
 
-The client retries `429`, `5xx`, and network failures with exponential backoff
-and jitter (default `maxRetries: 2`), honoring the `Retry-After` header. Only
-requests that carry an `Idempotency-Key` are retried — which is the default for
-every mutating verb.
+GETs and keyed mutations retry `429`, `5xx`, timeouts, and network failures
+with exponential backoff and jitter (default `maxRetries: 2`), honoring
+`Retry-After`. Keyed `409` errors retry only when
+`details.idempotency_outcome` is `in_progress`. An `unknown` outcome requires
+reading/reconciling the resource before any further mutation.
 
 ## Pagination
 
@@ -108,19 +109,20 @@ for await (const order of vatly.orders.listAll({ limit: 100 })) {
 
 ## Resources
 
-The SDK provides access to all Vatly API resources.
+The SDK provides access to all Vatly API resources. The complete method and
+return-type inventory is in the [operation reference](API.md).
 
 | Resource | Description |
 | --- | --- |
-| [Checkouts](/docs/Checkouts.md) | Create hosted payment pages |
-| [Customers](/docs/Customers.md) | Manage customer records |
-| [Subscriptions](/docs/Subscriptions.md) | Recurring billing |
-| [Subscription Plans](/docs/SubscriptionPlans.md) | Define subscription products |
-| [One-Off Products](/docs/OneOffProducts.md) | Single-purchase products |
-| [Orders](/docs/Orders.md) | Transaction records |
-| [Refunds](/docs/Refunds.md) | Process refunds |
-| [Chargebacks](/docs/Chargebacks.md) | Handle disputes |
-| [Webhooks](/docs/Webhooks.md) | Real-time event notifications |
+| [Checkouts](Checkouts.md) | Create hosted payment pages |
+| [Customers](Customers.md) | Manage customer records |
+| [Subscriptions](Subscriptions.md) | Recurring billing |
+| [Subscription Plans](SubscriptionPlans.md) | Define subscription products |
+| [One-Off Products](OneOffProducts.md) | Single-purchase products |
+| [Orders](Orders.md) | Transaction records |
+| [Refunds](Refunds.md) | Process refunds |
+| [Chargebacks](Chargebacks.md) | Handle disputes |
+| [Webhooks](Webhooks.md) | Endpoint management and real-time event notifications |
 
 ## Error handling
 
@@ -131,13 +133,14 @@ Every non-2xx response maps to a typed error extending `VatlyError`.
 | `VatlyAuthError` | `401` | Missing or invalid API key. |
 | `VatlyForbiddenError` | `403` | Authenticated but not allowed. |
 | `VatlyNotFoundError` | `404` | Resource does not exist. |
+| `VatlyConflictError` | `409` | Conflict; inspect `.details` and `.retryAfter`. |
 | `VatlyValidationError` | `422` | Invalid request; exposes `.errors: Record<string, string[]>`. |
 | `VatlyRateLimitError` | `429` | Rate limited; exposes `.retryAfter` (seconds). |
 | `VatlyApiError` | other | Any other API error. |
 | `VatlyConnectionError` / `VatlyTimeoutError` | — | Network failure / timeout. |
 
 ```ts
-import { VatlyValidationError } from "@vatly/sdk";
+import { VatlyValidationError } from "@getvatly/sdk";
 
 try {
   await vatly.customers.create({ email: "" });
@@ -157,7 +160,7 @@ Monetary amounts are `Money` objects — `{ value, currency }` where `value` is 
 `number`. Helpers convert to/from integer minor units:
 
 ```ts
-import { toMinorUnits, fromMinorUnits } from "@vatly/sdk";
+import { toMinorUnits, fromMinorUnits } from "@getvatly/sdk";
 
 toMinorUnits({ value: "29.00", currency: "EUR" }); // → 2900n
 fromMinorUnits(2900n, "EUR");                       // → { value: "29.00", currency: "EUR" }

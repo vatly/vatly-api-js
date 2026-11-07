@@ -1,7 +1,7 @@
 # Examples
 
-Runnable snippets for `@vatly/sdk`. They import the package by name
-(`@vatly/sdk`), so from a project that has the SDK installed you can copy them
+Runnable snippets for `@getvatly/sdk`. They import the package by name
+(`@getvatly/sdk`), so from a project that has the SDK installed you can copy them
 in directly.
 
 | File | What it shows |
@@ -11,7 +11,7 @@ in directly.
 
 ## Running `basic-crud.ts`
 
-From a project with `@vatly/sdk` installed:
+From a project with `@getvatly/sdk@alpha` installed:
 
 ```bash
 VATLY_API_KEY=test_xxxxxxxxxxxxxxxxxx npx tsx examples/basic-crud.ts

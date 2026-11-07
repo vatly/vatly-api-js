@@ -15,16 +15,16 @@ describe("testHelpers", () => {
     );
   });
 
-  it("rejects simulatePaymentFailure against a live_ token", async () => {
+  it("rejects simulateOrderPayment against a live_ token", async () => {
     const { fetch } = makeFetchSequence([{ status: 200, body: {} }]);
     const client = new VatlyClient({
       apiKey: "live_abcdefghij0123456789",
       baseUrl: "https://api.example.com/v1",
       fetch,
     });
-    await expect(client.testHelpers.simulatePaymentFailure("txn_1")).rejects.toThrow(
-      /can only be called with a test-mode API key/,
-    );
+    await expect(
+      client.testHelpers.simulateOrderPayment("order_1", { paymentStatus: "failed" }),
+    ).rejects.toThrow(/can only be called with a test-mode API key/);
   });
 
   it("allows test-mode calls through", async () => {
