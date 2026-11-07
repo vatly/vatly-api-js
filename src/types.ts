@@ -11,6 +11,7 @@ export type CheckoutProduct = Schemas["CheckoutProduct"];
 export type CreateCheckoutRequest = Schemas["CreateCheckoutRequest"];
 
 export type Customer = Schemas["Customer"];
+export type CustomerListParams = NonNullable<operations["listCustomers"]["parameters"]["query"]>;
 export type CreateCustomerRequest = Schemas["CreateCustomerRequest"];
 export type UpdateCustomerRequest = Schemas["UpdateCustomerRequest"];
 export type CreatePortalSessionRequest = Schemas["CreatePortalSessionRequest"];

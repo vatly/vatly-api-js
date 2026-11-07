@@ -17,11 +17,12 @@ describe("customers", () => {
       { status: 200, body: page("/customers", [{ id: "customer_1" }]) },
     ]);
 
-    const res = await client.customers.list({ limit: 10 });
+    const res = await client.customers.list({ limit: 10, email: "buyer+demo@example.com" });
 
     expect(calls[0]!.method).toBe("GET");
     expect(calls[0]!.url).toContain("/customers");
     expect(calls[0]!.url).toContain("limit=10");
+    expect(new URL(calls[0]!.url).searchParams.get("email")).toBe("buyer+demo@example.com");
     expect(res.data[0]!.id).toBe("customer_1");
   });
 
