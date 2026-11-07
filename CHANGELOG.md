@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   example demonstrates the pattern. Mirrors `vatly-api-php`'s
   `UnsupportedWebhookReceived` DTO.
 
+### Fixed
+
+- Bind the fetch transport to its global receiver so Cloudflare workerd does not
+  reject requests with `Illegal invocation`. Verified with a real read-only API call.
+- Expose the production customer email filter in `CustomerListParams`.
+
 ## 0.3.0-alpha.1 — prepared, not published
 
 ### Added

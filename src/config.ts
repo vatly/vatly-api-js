@@ -163,7 +163,8 @@ export function resolveConfig(options: VatlyClientOptions = {}): ResolvedConfig 
     baseUrl: baseUrl.replace(/\/+$/, ""),
     timeoutMs: options.timeoutMs ?? 30_000,
     maxRetries: options.maxRetries ?? 2,
-    fetch: fetchImpl,
+    // Workers' native fetch rejects invocation with the config object as `this`.
+    fetch: fetchImpl.bind(globalThis),
     defaultHeaders: options.defaultHeaders ?? {},
     userAgent: options.userAgent ?? `vatly-sdk-js/${SDK_VERSION}`,
     mode,

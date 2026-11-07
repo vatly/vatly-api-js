@@ -20,6 +20,19 @@ import { makeFetchSequence } from "./test-utils.js";
 
 const TEST_API_KEY = "test_abcdefghij0123456789"; // matches ^(live|test)_[\w|]{18,}$
 
+it("calls the native transport with its global receiver (Workers)", async () => {
+  vi.stubGlobal("fetch", function (this: unknown) {
+    if (this !== globalThis) throw new TypeError("Illegal invocation");
+    return Promise.resolve(Response.json({ id: "customer_worker" }));
+  });
+  try {
+    const client = new VatlyClient({ apiKey: TEST_API_KEY, maxRetries: 0 });
+    expect((await client.customers.get("customer_worker")).id).toBe("customer_worker");
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
 function makeClient(opts: {
   fetch: typeof fetch;
   maxRetries?: number;

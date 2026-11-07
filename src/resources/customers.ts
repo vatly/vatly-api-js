@@ -4,6 +4,7 @@ import type {
   CreateCustomerRequest,
   CreatePortalSessionRequest,
   Customer,
+  CustomerListParams,
   PortalSession,
   Subscription,
   UpdateCustomerRequest,
@@ -11,14 +12,14 @@ import type {
 import { BaseResource } from "./base.js";
 
 export class CustomersResource extends BaseResource {
-  list(params: ListParams = {}, opts?: RequestOptions): Promise<PaginatedList<Customer>> {
+  list(params: CustomerListParams = {}, opts?: RequestOptions): Promise<PaginatedList<Customer>> {
     return this.request<PaginatedList<Customer>>(
       { method: "GET", path: "/customers", query: params as Record<string, unknown> },
       opts,
     );
   }
 
-  listAll(params: ListParams = {}, opts?: RequestOptions): AsyncIterableIterator<Customer> {
+  listAll(params: CustomerListParams = {}, opts?: RequestOptions): AsyncIterableIterator<Customer> {
     return this.paginateAll<Customer>((p, o) => this.list(p, o), params, opts);
   }
 
