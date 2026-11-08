@@ -1,11 +1,11 @@
 name: Release
 
-# Publishes @getvatly/sdk to npm when a GitHub Release is published.
+# Stages @getvatly/sdk on npm when a GitHub Release is published.
 # Tag the release `vX.Y.Z` matching package.json's version.
 #
-# Requires repo secret NPM_TOKEN (an npm automation token with publish rights).
-# Build provenance is attached via OIDC — see `id-token: write` below and
-# `publishConfig.provenance` in package.json.
+# Configure npm trusted publishing for vatly/vatly-api-js and release.yml.
+# NPM_TOKEN is an optional short-lived stage-only token for the first publication,
+# before the package exists on npm. Remove it after configuring trusted publishing.
 
 on:
   release:
@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   publish:
-    name: Publish to npm
+    name: Stage on npm for approval
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,9 +26,12 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "24"
           registry-url: "https://registry.npmjs.org"
           cache: pnpm
+
+      - name: Install npm with staged publishing support
+        run: npm install --global npm@11
 
       - name: Install
         run: pnpm install --frozen-lockfile
@@ -58,10 +61,10 @@ jobs:
         run: pnpm build && pnpm test:package
 
       # Explicitly route prereleases to alpha, never npm's latest dist-tag.
-      - name: Publish
+      - name: Stage for maintainer approval
         run: |
           VERSION="$(node -p "require('./package.json').version")"
           if [[ "$VERSION" == *-* ]]; then DIST_TAG=alpha; else DIST_TAG=latest; fi
-          npm publish --provenance --access public --tag "$DIST_TAG"
+          npm stage publish --provenance --access public --tag "$DIST_TAG"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

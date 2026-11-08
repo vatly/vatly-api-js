@@ -7,7 +7,7 @@ Merchant of Record for European software and digital products.
 
 **Alpha candidate: `0.3.0-alpha.1`.** Prepared for publication, not yet released
 by this change. The public API may change during alpha. npm scope: `@getvatly`;
-GitHub home after repository transfer: `vatly/vatly-js`.
+GitHub home: `vatly/vatly-api-js`.
 
 - All 50 REST operations in the [production OpenAPI spec](https://docs.vatly.com/openapi.yaml).
 - Generated request/resource types and 32 discriminated webhook events.
@@ -214,11 +214,38 @@ Builds and `gen:check` require no network. See [spec provenance](spec/README.md)
 
 CI covers Node 20/22/24, every documented REST operation, and installed ESM/CJS
 consumers with NodeNext/Bundler resolution. `prepack` builds artifacts; the release
-workflow verifies and sends prereleases to the `alpha` npm dist-tag, not `latest`.
+workflow verifies and stages prereleases for the `alpha` npm dist-tag, not `latest`.
+An npm maintainer must approve each staged package with 2FA before it goes live.
 Publishing requires a separately authorized release and npm access to `@getvatly`.
-Repository transfer to `vatly/vatly-js` must precede provenance publication.
+The public source repository for provenance is `vatly/vatly-api-js`.
 Live API testing requires account-specific credentials/resources and has not
 been performed in this change. No fluent wrapper or PHP port is included.
+
+### Publishing
+
+1. Keep the source repository `vatly/vatly-api-js` public when publishing with
+   provenance. The npm package name stays `@getvatly/sdk`.
+2. For the first publication, an npm owner with publish access to `@getvatly` must
+   create a short-lived granular token with **Read and write (stage only)** access
+   to that scope. Store it as the GitHub organization Actions secret `NPM_TOKEN`,
+   restricted to the SDK and Fluent repositories. Never commit it. Remove any
+   repository-level secret of the same name, which would override the org secret.
+3. Commit the release changes and publish a GitHub prerelease tagged
+   `v0.3.0-alpha.1` at that commit. `.github/workflows/release.yml` verifies the
+   version and package, then runs `npm stage publish` with provenance and the
+   `alpha` tag. Pushing a Git tag alone does not trigger staging.
+4. Review the candidate in npm's **Staged Packages** tab and approve it with 2FA.
+   Staging a new package creates a public `0.0.0-stage` placeholder, not a live alpha.
+5. In npm package settings, add a GitHub Actions trusted publisher: organization
+   `vatly`, repository `vatly-api-js`, workflow filename `release.yml`, no environment.
+   Keep it stage-only; do not allow direct `npm publish`. After configuring both
+   packages, remove the shared bootstrap secret and revoke its token. Validate
+   each trusted publisher by staging the next version within npm's two-day window.
+6. Approve and publish the SDK before staging `@getvatly/fluent`, which requires
+   it as a peer.
+
+See [npm staged publishing](https://docs.npmjs.com/staged-publishing) and
+[trusted publishing](https://docs.npmjs.com/trusted-publishers).
 
 ## License
 

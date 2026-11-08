@@ -113,4 +113,4 @@ of the first tagged npm release.
   minor-unit helpers.
 - Types generated from the Vatly OpenAPI spec.
 
-[Unreleased]: https://github.com/vatly/vatly-js/commits/main
+[Unreleased]: https://github.com/vatly/vatly-api-js/commits/main
