@@ -11,7 +11,6 @@ import { VatlyClient, VatlyValidationError } from "@getvatly/sdk";
 
 const vatly = new VatlyClient({
   apiKey: process.env.VATLY_API_KEY, // must start with live_ or test_
-  // server: "staging",              // default: "production"
 });
 
 async function main() {

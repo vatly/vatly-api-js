@@ -63,15 +63,14 @@ Both modes use the production API, but data cannot cross mode boundaries.
 ```ts
 const vatly = new VatlyClient({
   apiKey: process.env.VATLY_API_KEY,
-  server: "production", // default; "staging" targets the separate staging server
   timeoutMs: 30_000,     // per attempt, including response body; 0 disables
   maxRetries: 2,         // retries after the first attempt
   clientInfo: { app: "MyApp/1.0", framework: "Next.js/15" },
 });
 ```
 
-`baseUrl` overrides `server`; defaults are `https://api.vatly.com/v1` and
-`https://api.staging.vatly.com/v1`. Advanced options include `fetch`,
+The API URL defaults to `https://api.vatly.com/v1` for both live and test keys.
+Use `baseUrl` for an explicit override. Advanced options include `fetch`,
 `defaultHeaders`, `userAgent`, and `idempotencyKeyGenerator`. Every method takes
 `RequestOptions` last: `{ idempotencyKey, timeoutMs, headers, signal }`.
 Cancellation also accepts `{ immediately: true }` in that options object.

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Remove the public production/staging `server` selector, `VatlyServer`, and
+  environment-specific URL constants. Both live and test keys use the Vatly API
+  URL, exported as `VATLY_BASE_URL`; explicit `baseUrl` overrides remain supported.
+
 ### Fixed
 
 - Bind the fetch transport to its global receiver so Cloudflare workerd does not

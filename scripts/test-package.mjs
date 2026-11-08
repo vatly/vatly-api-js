@@ -70,6 +70,8 @@ main().catch(error => { console.error(error); process.exitCode = 1; });
 import { VatlyClient, fromMinorUnits, type SubscriptionBillingUpdateLink, type Subscription, type PortalSession, type RequestOptions, type CreateOneOffProductRequest } from "@getvatly/sdk";
 import { constructWebhookEvent, type VatlyWebhookEvent } from "@getvatly/sdk/webhooks";
 const client = new VatlyClient({ apiKey: "test_abcdefghij0123456789" });
+// @ts-expect-error named server selection is not part of the public SDK
+new VatlyClient({ apiKey: "test_abcdefghij0123456789", server: "staging" });
 const options: RequestOptions = { timeoutMs: 1000 };
 const canceled: Promise<void> = client.subscriptions.cancel("sub_1", { ...options, immediately: true });
 const link: Promise<SubscriptionBillingUpdateLink> = client.subscriptions.createBillingUpdateLink("sub_1", { redirectUrlSuccess: "https://example.com/ok", redirectUrlCanceled: "https://example.com/no" });

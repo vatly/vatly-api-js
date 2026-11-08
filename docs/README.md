@@ -40,7 +40,6 @@ import { VatlyClient } from "@getvatly/sdk";
 
 const vatly = new VatlyClient({
   apiKey: process.env.VATLY_API_KEY, // live_… or test_…
-  // server: "staging",              // default: "production"
 });
 
 // Create a checkout

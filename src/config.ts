@@ -1,8 +1,4 @@
-/** Logical Vatly server target. */
-export type VatlyServer = "production" | "staging";
-
-export const VATLY_PRODUCTION_BASE_URL = "https://api.vatly.com/v1";
-export const VATLY_STAGING_BASE_URL = "https://api.staging.vatly.com/v1";
+export const VATLY_BASE_URL = "https://api.vatly.com/v1";
 
 /**
  * Same regex enforced by `vatly/vatly-api-php` (`VatlyApiClient::setApiKey`).
@@ -39,10 +35,8 @@ export interface VatlyClientOptions {
    * Falls back to the `VATLY_API_KEY` env var on Node.
    */
   apiKey?: string;
-  /** Override the base URL. Takes precedence over `server`. */
+  /** Override the API base URL. Defaults to `https://api.vatly.com/v1`. */
   baseUrl?: string;
-  /** Select a named server. Defaults to `"production"`. */
-  server?: VatlyServer;
   /** Per-request timeout in ms. Defaults to 30s. Set to 0 to disable. */
   timeoutMs?: number;
   /** Max retry attempts on 429/5xx/network errors. Defaults to 2. */
@@ -135,9 +129,7 @@ export function resolveConfig(options: VatlyClientOptions = {}): ResolvedConfig 
 
   const mode = detectMode(apiKey);
 
-  const baseUrl =
-    options.baseUrl ??
-    (options.server === "staging" ? VATLY_STAGING_BASE_URL : VATLY_PRODUCTION_BASE_URL);
+  const baseUrl = options.baseUrl ?? VATLY_BASE_URL;
 
   const fetchImpl = options.fetch ?? globalThis.fetch;
   if (typeof fetchImpl !== "function") {

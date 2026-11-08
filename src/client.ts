@@ -47,7 +47,7 @@ export class VatlyClient {
     return this.config.mode;
   }
 
-  /** Effective base URL after server/baseUrl resolution. */
+  /** Effective API base URL, including any explicit override. */
   get baseUrl(): string {
     return this.config.baseUrl;
   }
