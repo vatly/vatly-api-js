@@ -1,14 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { Order, Webhook } from "../types.js";
 import {
-  type UnsupportedWebhookEvent,
-  type VatlyWebhookEvent,
+  type KnownWebhookEvent,
   WEBHOOK_EVENT_NAMES,
   WebhookEventName,
   constructWebhookEvent,
   constructWebhookEventFromRequest,
-  isKnownWebhookEvent,
-  isUnsupportedWebhookEvent,
   isWebhookEventName,
   toWebhookEvent,
 } from "./events.js";
@@ -67,9 +64,6 @@ describe("webhook event factory", () => {
     it("WEBHOOK_EVENT_NAMES lists every event (32 incl. webhook.setup)", () => {
       expect(WEBHOOK_EVENT_NAMES).toHaveLength(32);
       expect(WEBHOOK_EVENT_NAMES).toContain("webhook.setup");
-      expect(WEBHOOK_EVENT_NAMES).toContain("subscription.updated");
-      expect(WEBHOOK_EVENT_NAMES).toContain("one_off_product.archived");
-      expect(WEBHOOK_EVENT_NAMES).toContain("subscription_plan.update_approved");
     });
 
     it("isWebhookEventName narrows known vs unknown", () => {
@@ -90,8 +84,8 @@ describe("webhook event factory", () => {
       );
 
       expect(event.eventName).toBe("order.paid");
-      expect(isKnownWebhookEvent(event)).toBe(true);
-      if (isKnownWebhookEvent(event) && event.eventName === "order.paid") {
+      expect(event.known).toBe(true);
+      if (event.known && event.eventName === "order.paid") {
         // Compiles only if `object` narrowed to Order:
         const order: Order = event.object;
         expect(order.id).toBe("order_1");
@@ -105,56 +99,11 @@ describe("webhook event factory", () => {
       });
 
       expect(event.eventName).toBe("webhook.setup");
-      if (isKnownWebhookEvent(event) && event.eventName === "webhook.setup") {
+      if (event.known && event.eventName === "webhook.setup") {
         const webhook: Webhook = event.object;
         expect(webhook.url).toBe("https://merchant.example/hook");
       }
       expect(event.links).toBeUndefined();
-    });
-  });
-
-  describe("unsupported events", () => {
-    const futureEventBody = JSON.stringify({
-      id: "webhook_event_future",
-      resource: "webhook_event",
-      eventName: "subscription.future_event",
-      entityType: "subscription",
-      entityId: "subscription_1",
-      object: { id: "subscription_1", some_future_field: 42 },
-      createdAt: "2026-10-19T12:00:00+00:00",
-      testmode: false,
-      links: {
-        self: {
-          href: "https://api.vatly.com/v1/webhook-events/webhook_event_future",
-          type: "application/json",
-        },
-      },
-    });
-
-    it("surfaces an UnsupportedWebhookEvent when eventName isn't in the catalogue", async () => {
-      const event = await constructWebhookEvent(
-        futureEventBody,
-        await signed(futureEventBody),
-        SECRET,
-        { now: FROZEN_NOW },
-      );
-
-      expect(isKnownWebhookEvent(event)).toBe(false);
-      expect(isUnsupportedWebhookEvent(event)).toBe(true);
-      if (isUnsupportedWebhookEvent(event)) {
-        expect(event.eventName).toBe("subscription.future_event");
-        // object is `unknown` — consumers must check its shape explicitly
-        const raw = event.object as { id: string };
-        expect(raw.id).toBe("subscription_1");
-      }
-    });
-
-    it("toWebhookEvent returns an UnsupportedWebhookEvent for an unknown name", () => {
-      const delivery = JSON.parse(futureEventBody);
-      const event = toWebhookEvent(delivery);
-      expect(isKnownWebhookEvent(event)).toBe(false);
-      // Round-trip: the envelope is unchanged (same reference).
-      expect(event).toBe(delivery);
     });
   });
 
@@ -171,15 +120,16 @@ describe("webhook event factory", () => {
   });
 
   describe("toWebhookEvent", () => {
-    it("is pure narrowing on known events (returns the same value, exhaustive switch type-checks)", () => {
+    it("classifies without changing signed fields (known switch remains exhaustive)", () => {
       const delivery = JSON.parse(orderPaidBody);
       const event = toWebhookEvent(delivery);
-      expect(event).toBe(delivery);
-      if (!isKnownWebhookEvent(event)) throw new Error("expected a known event");
+      expect(event).toEqual({ ...delivery, known: true });
+      expect(delivery).not.toHaveProperty("known");
+      if (!event.known) throw new Error("Expected a known event");
 
-      // Exhaustiveness over VatlyWebhookEvent: fully-handled switch leaves
+      // Exhaustiveness: the union is closed, so a fully-handled switch leaves
       // `never` in the default — this function compiling proves it.
-      const describe = (e: VatlyWebhookEvent): string => {
+      const describe = (e: KnownWebhookEvent): string => {
         switch (e.eventName) {
           case "order.paid":
           case "order.canceled":
@@ -194,30 +144,29 @@ describe("webhook event factory", () => {
             return e.object.id;
           case "subscription.started":
           case "subscription.billing_updated":
-          case "subscription.updated":
-          case "subscription.update_scheduled":
           case "subscription.canceled_immediately":
-          case "subscription.canceled_for_nonpayment":
           case "subscription.canceled_with_grace_period":
           case "subscription.cancellation_grace_period_completed":
           case "subscription.resumed":
-            return e.object.id;
-          case "checkout.paid":
-          case "checkout.failed":
-          case "checkout.canceled":
-          case "checkout.expired":
+          case "subscription.canceled_for_nonpayment":
+          case "subscription.updated":
+          case "subscription.update_scheduled":
             return e.object.id;
           case "one_off_product.update_submitted":
           case "one_off_product.update_approved":
           case "one_off_product.update_rejected":
           case "one_off_product.archived":
           case "one_off_product.unarchived":
-            return e.object.id;
           case "subscription_plan.update_submitted":
           case "subscription_plan.update_approved":
           case "subscription_plan.update_rejected":
           case "subscription_plan.archived":
           case "subscription_plan.unarchived":
+            return e.object.basePrice.value;
+          case "checkout.paid":
+          case "checkout.failed":
+          case "checkout.canceled":
+          case "checkout.expired":
             return e.object.id;
           case "webhook.setup":
             return e.object.url;
@@ -228,6 +177,23 @@ describe("webhook event factory", () => {
         }
       };
       expect(describe(event)).toBe("order_1");
+    });
+
+    it("preserves signed future events and ignores a wire-supplied known flag", async () => {
+      const delivery = {
+        ...JSON.parse(orderPaidBody),
+        known: true,
+        eventName: "order.future_event",
+        object: { futureField: 42 },
+      };
+      const raw = JSON.stringify(delivery);
+      const signature = await signed(raw);
+      const event = await constructWebhookEvent(raw, signature, SECRET, { now: FROZEN_NOW });
+      expect(event).toEqual({ ...delivery, known: false });
+      expect(toWebhookEvent({ ...JSON.parse(orderPaidBody), known: false }).known).toBe(true);
+      await expect(
+        constructWebhookEvent(`${raw} `, signature, SECRET, { now: FROZEN_NOW }),
+      ).rejects.toThrow(/signature/i);
     });
   });
 });

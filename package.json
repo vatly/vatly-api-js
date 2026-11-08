@@ -5,11 +5,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/vatly/vatly-js.git"
+    "url": "git+https://github.com/vatly/vatly-api-js.git"
   },
-  "homepage": "https://github.com/vatly/vatly-js#readme",
+  "homepage": "https://github.com/vatly/vatly-api-js#readme",
   "bugs": {
-    "url": "https://github.com/vatly/vatly-js/issues"
+    "url": "https://github.com/vatly/vatly-api-js/issues"
   },
   "type": "module",
   "main": "./dist/index.cjs",

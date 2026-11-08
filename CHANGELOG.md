@@ -7,16 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+### Changed
 
-- `UnsupportedWebhookEvent` typed fallback for webhook deliveries whose
-  `eventName` isn't in the catalogue this SDK release knows about (e.g. the
-  server ships a new event between SDK versions). `toWebhookEvent` and the
-  `constructWebhookEvent*` helpers now return `MaybeUnsupportedWebhookEvent`;
-  use the new `isKnownWebhookEvent()` / `isUnsupportedWebhookEvent()` type
-  guards to branch before switching on `eventName`. The `nextjs-webhook-route`
-  example demonstrates the pattern. Mirrors `vatly-api-php`'s
-  `UnsupportedWebhookReceived` DTO.
+- Webhook helpers return a disjoint known/unsupported event union. Check the
+  SDK-owned `known` flag before narrowing `eventName`; unknown signed deliveries
+  retain their envelope and an `unknown` object for durable triage. Mirrors
+  `vatly-api-php`'s `UnsupportedWebhookReceived` DTO.
+- Add safe customer-portal and endpoint-provisioning examples and compile every
+  shipped example against the installed package.
+- Remove the public production/staging `server` selector, `VatlyServer`, and
+  environment-specific URL constants. Both live and test keys use the Vatly API
+  URL, exported as `VATLY_BASE_URL`; explicit `baseUrl` overrides remain supported.
 
 ### Fixed
 
@@ -122,11 +123,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   new customer-portal and webhook-endpoint CRUD flows.
 - `UnsupportedWebhookEvent` typed fallback for webhook deliveries whose
   `eventName` isn't in the catalogue this SDK release knows about (e.g. the
-  server ships a new event between SDK versions). `toWebhookEvent` and the
-  `constructWebhookEvent*` helpers now return `MaybeUnsupportedWebhookEvent`;
-  use the new `isKnownWebhookEvent()` / `isUnsupportedWebhookEvent()` type
-  guards to branch before switching on `eventName`. The `nextjs-webhook-route`
-  example demonstrates the pattern.
+  server ships a new event between SDK versions). `VatlyWebhookEvent` is now a
+  disjoint `KnownWebhookEvent` / `UnsupportedWebhookEvent` union keyed on an
+  SDK-owned `known` boolean — check it before switching on `eventName`. The
+  `nextjs-webhook-route` example demonstrates the pattern.
 
 ### Changed
 
@@ -173,4 +173,4 @@ of the first tagged npm release.
   minor-unit helpers.
 - Types generated from the Vatly OpenAPI spec.
 
-[Unreleased]: https://github.com/vatly/vatly-js/commits/main
+[Unreleased]: https://github.com/vatly/vatly-api-js/commits/main

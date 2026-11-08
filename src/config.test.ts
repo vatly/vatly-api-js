@@ -49,20 +49,14 @@ describe("config", () => {
       }
     });
 
-    it("defaults to production base URL", () => {
-      const cfg = resolveConfig({ apiKey: VALID_TEST_KEY });
+    it.each([VALID_LIVE_KEY, VALID_TEST_KEY])("uses the Vatly API for key %s", (apiKey) => {
+      const cfg = resolveConfig({ apiKey });
       expect(cfg.baseUrl).toBe("https://api.vatly.com/v1");
     });
 
-    it("selects staging when server='staging'", () => {
-      const cfg = resolveConfig({ apiKey: VALID_TEST_KEY, server: "staging" });
-      expect(cfg.baseUrl).toBe("https://api.staging.vatly.com/v1");
-    });
-
-    it("baseUrl overrides server", () => {
+    it("allows an explicit baseUrl override", () => {
       const cfg = resolveConfig({
         apiKey: VALID_TEST_KEY,
-        server: "staging",
         baseUrl: "https://example.com/api",
       });
       expect(cfg.baseUrl).toBe("https://example.com/api");

@@ -13,6 +13,7 @@
  *
  * ```ts
  * const event = await constructWebhookEvent(rawBody, signature, secret);
+ * if (!event.known) return recordUnsupported(event);
  * switch (event.eventName) {
  *   case "order.paid":
  *     event.object.total;      // Money — fully typed, no cast
@@ -60,17 +61,13 @@ export const WebhookEventName = {
   RefundCanceled: "refund.canceled",
   SubscriptionStarted: "subscription.started",
   SubscriptionBillingUpdated: "subscription.billing_updated",
-  SubscriptionUpdated: "subscription.updated",
-  SubscriptionUpdateScheduled: "subscription.update_scheduled",
   SubscriptionCanceledImmediately: "subscription.canceled_immediately",
-  SubscriptionCanceledForNonpayment: "subscription.canceled_for_nonpayment",
   SubscriptionCanceledWithGracePeriod: "subscription.canceled_with_grace_period",
   SubscriptionCancellationGracePeriodCompleted: "subscription.cancellation_grace_period_completed",
   SubscriptionResumed: "subscription.resumed",
-  CheckoutPaid: "checkout.paid",
-  CheckoutFailed: "checkout.failed",
-  CheckoutCanceled: "checkout.canceled",
-  CheckoutExpired: "checkout.expired",
+  SubscriptionCanceledForNonpayment: "subscription.canceled_for_nonpayment",
+  SubscriptionUpdated: "subscription.updated",
+  SubscriptionUpdateScheduled: "subscription.update_scheduled",
   OneOffProductUpdateSubmitted: "one_off_product.update_submitted",
   OneOffProductUpdateApproved: "one_off_product.update_approved",
   OneOffProductUpdateRejected: "one_off_product.update_rejected",
@@ -81,6 +78,10 @@ export const WebhookEventName = {
   SubscriptionPlanUpdateRejected: "subscription_plan.update_rejected",
   SubscriptionPlanArchived: "subscription_plan.archived",
   SubscriptionPlanUnarchived: "subscription_plan.unarchived",
+  CheckoutPaid: "checkout.paid",
+  CheckoutFailed: "checkout.failed",
+  CheckoutCanceled: "checkout.canceled",
+  CheckoutExpired: "checkout.expired",
   /**
    * Verification call sent when an endpoint is registered or its URL changes.
    * Delivered as a normal signed webhook with `entityType: "webhook"`; just
@@ -115,17 +116,13 @@ interface EventObjectMap {
   "refund.canceled": Refund;
   "subscription.started": Subscription;
   "subscription.billing_updated": Subscription;
-  "subscription.updated": Subscription;
-  "subscription.update_scheduled": Subscription;
   "subscription.canceled_immediately": Subscription;
-  "subscription.canceled_for_nonpayment": Subscription;
   "subscription.canceled_with_grace_period": Subscription;
   "subscription.cancellation_grace_period_completed": Subscription;
   "subscription.resumed": Subscription;
-  "checkout.paid": Checkout;
-  "checkout.failed": Checkout;
-  "checkout.canceled": Checkout;
-  "checkout.expired": Checkout;
+  "subscription.canceled_for_nonpayment": Subscription;
+  "subscription.updated": Subscription;
+  "subscription.update_scheduled": Subscription;
   "one_off_product.update_submitted": OneOffProduct;
   "one_off_product.update_approved": OneOffProduct;
   "one_off_product.update_rejected": OneOffProduct;
@@ -136,6 +133,10 @@ interface EventObjectMap {
   "subscription_plan.update_rejected": SubscriptionPlan;
   "subscription_plan.archived": SubscriptionPlan;
   "subscription_plan.unarchived": SubscriptionPlan;
+  "checkout.paid": Checkout;
+  "checkout.failed": Checkout;
+  "checkout.canceled": Checkout;
+  "checkout.expired": Checkout;
   "webhook.setup": Webhook;
 }
 
@@ -156,53 +157,27 @@ export type WebhookEventEnvelope = Omit<WebhookDelivery, "eventName" | "object">
 
 /** A single typed event: the envelope plus a narrowed `eventName` / `object` pair. */
 export type WebhookEventOfType<K extends WebhookEventName> = WebhookEventEnvelope & {
+  known: true;
   eventName: K;
   object: EventObjectMap[K];
 };
 
 /**
- * A verified webhook delivery, discriminated by `eventName`. Switching on
- * `eventName` narrows `object` to the matching resource type.
+ * A known delivery, discriminated by `eventName` to narrow its resource type.
  */
-export type VatlyWebhookEvent = {
+export type KnownWebhookEvent = {
   [K in WebhookEventName]: WebhookEventOfType<K>;
 }[WebhookEventName];
 
-/**
- * A verified webhook delivery whose `eventName` isn't in the catalogue this
- * SDK version knows about — Vatly ships a new event, your SDK is older, and
- * the delivery arrives before you upgrade. `object` is typed as `unknown`
- * because the SDK has no shape to narrow it to.
- *
- * Treat it as a soft notice: log the `eventName` for triage, acknowledge the
- * webhook with 2xx so Vatly doesn't retry, and plan to upgrade the SDK.
- */
-export interface UnsupportedWebhookEvent extends WebhookEventEnvelope {
+/** A verified delivery newer than this SDK's catalogue. Retain it for triage. */
+export type UnsupportedWebhookEvent = WebhookEventEnvelope & {
+  known: false;
   eventName: string;
   object: unknown;
-}
+};
 
-/**
- * The union {@link toWebhookEvent} actually returns at runtime: a known typed
- * event, or {@link UnsupportedWebhookEvent} when the delivery's `eventName` is
- * one this SDK release doesn't recognize. Narrow with {@link isKnownWebhookEvent}
- * before switching on `eventName`.
- */
-export type MaybeUnsupportedWebhookEvent = VatlyWebhookEvent | UnsupportedWebhookEvent;
-
-/** Type guard: true when the event is one of the SDK's known catalogue entries. */
-export function isKnownWebhookEvent(
-  event: MaybeUnsupportedWebhookEvent,
-): event is VatlyWebhookEvent {
-  return isWebhookEventName(event.eventName);
-}
-
-/** Convenience inverse of {@link isKnownWebhookEvent} for `.filter()` ergonomics. */
-export function isUnsupportedWebhookEvent(
-  event: MaybeUnsupportedWebhookEvent,
-): event is UnsupportedWebhookEvent {
-  return !isWebhookEventName(event.eventName);
-}
+/** Check `known` before switching on `eventName` to narrow the resource. */
+export type VatlyWebhookEvent = KnownWebhookEvent | UnsupportedWebhookEvent;
 
 // Named per-event aliases (mirror the PHP event DTO classes), for callers that
 // want to annotate a handler with a single event's type.
@@ -216,21 +191,17 @@ export type RefundFailedEvent = WebhookEventOfType<"refund.failed">;
 export type RefundCanceledEvent = WebhookEventOfType<"refund.canceled">;
 export type SubscriptionStartedEvent = WebhookEventOfType<"subscription.started">;
 export type SubscriptionBillingUpdatedEvent = WebhookEventOfType<"subscription.billing_updated">;
-export type SubscriptionUpdatedEvent = WebhookEventOfType<"subscription.updated">;
-export type SubscriptionUpdateScheduledEvent = WebhookEventOfType<"subscription.update_scheduled">;
 export type SubscriptionCanceledImmediatelyEvent =
   WebhookEventOfType<"subscription.canceled_immediately">;
-export type SubscriptionCanceledForNonpaymentEvent =
-  WebhookEventOfType<"subscription.canceled_for_nonpayment">;
 export type SubscriptionCanceledWithGracePeriodEvent =
   WebhookEventOfType<"subscription.canceled_with_grace_period">;
 export type SubscriptionCancellationGracePeriodCompletedEvent =
   WebhookEventOfType<"subscription.cancellation_grace_period_completed">;
 export type SubscriptionResumedEvent = WebhookEventOfType<"subscription.resumed">;
-export type CheckoutPaidEvent = WebhookEventOfType<"checkout.paid">;
-export type CheckoutFailedEvent = WebhookEventOfType<"checkout.failed">;
-export type CheckoutCanceledEvent = WebhookEventOfType<"checkout.canceled">;
-export type CheckoutExpiredEvent = WebhookEventOfType<"checkout.expired">;
+export type SubscriptionCanceledForNonpaymentEvent =
+  WebhookEventOfType<"subscription.canceled_for_nonpayment">;
+export type SubscriptionUpdatedEvent = WebhookEventOfType<"subscription.updated">;
+export type SubscriptionUpdateScheduledEvent = WebhookEventOfType<"subscription.update_scheduled">;
 export type OneOffProductUpdateSubmittedEvent =
   WebhookEventOfType<"one_off_product.update_submitted">;
 export type OneOffProductUpdateApprovedEvent =
@@ -247,42 +218,33 @@ export type SubscriptionPlanUpdateRejectedEvent =
   WebhookEventOfType<"subscription_plan.update_rejected">;
 export type SubscriptionPlanArchivedEvent = WebhookEventOfType<"subscription_plan.archived">;
 export type SubscriptionPlanUnarchivedEvent = WebhookEventOfType<"subscription_plan.unarchived">;
+export type CheckoutPaidEvent = WebhookEventOfType<"checkout.paid">;
+export type CheckoutFailedEvent = WebhookEventOfType<"checkout.failed">;
+export type CheckoutCanceledEvent = WebhookEventOfType<"checkout.canceled">;
+export type CheckoutExpiredEvent = WebhookEventOfType<"checkout.expired">;
 export type WebhookSetupEvent = WebhookEventOfType<"webhook.setup">;
 
 /**
  * Refine an already-verified {@link WebhookDelivery} into a discriminated
- * event. Returns {@link VatlyWebhookEvent} when `eventName` is in the SDK's
- * catalogue, {@link UnsupportedWebhookEvent} otherwise. Runtime check only —
- * no field is mutated.
- *
- * `WebhookDelivery["eventName"]` is a closed union generated from the spec at
- * SDK-build time, but the live wire can carry a newer name if Vatly ships an
- * event between SDK releases. Guarding here keeps consumers from falling into
- * the `never` default of an exhaustive `switch` on `eventName`.
+ * {@link VatlyWebhookEvent}. Returns a shallow copy with an SDK-owned `known`
+ * discriminator; the signed fields and resource snapshot are preserved.
+ * This classifies event names, not resource schemas. It does not verify signatures.
  *
  * Use this when you verified the signature yourself (e.g. via `constructEvent`)
  * and want the narrowed event. To verify and narrow in one step, use
  * {@link constructWebhookEvent} / {@link constructWebhookEventFromRequest}.
- *
- * ```ts
- * const event = toWebhookEvent(delivery);
- * if (!isKnownWebhookEvent(event)) {
- *   log.info("unknown vatly event", { eventName: event.eventName });
- *   return ack();
- * }
- * switch (event.eventName) {
- *   case "order.paid": ... // narrows event.object to Order
- * }
- * ```
  */
-export function toWebhookEvent(delivery: WebhookDelivery): MaybeUnsupportedWebhookEvent {
-  if (isWebhookEventName(delivery.eventName)) return delivery as VatlyWebhookEvent;
-  return delivery as unknown as UnsupportedWebhookEvent;
+export function toWebhookEvent(
+  delivery: WebhookEventEnvelope & { eventName: string; object: unknown },
+): VatlyWebhookEvent {
+  return {
+    ...delivery,
+    known: isWebhookEventName(delivery.eventName),
+  } as VatlyWebhookEvent;
 }
 
 /**
- * Verify the signature and return a typed event, falling back to
- * {@link UnsupportedWebhookEvent} for a never-before-seen `eventName`.
+ * Verify the signature and return a typed, discriminated {@link VatlyWebhookEvent}.
  *
  * The one-shot equivalent of {@link constructEvent} + {@link toWebhookEvent}.
  * Pass the RAW request body — reserialising the JSON changes the bytes and
@@ -293,19 +255,19 @@ export async function constructWebhookEvent(
   signatureHeader: string | null | undefined,
   secret: string | readonly string[],
   options?: VerifyOptions,
-): Promise<MaybeUnsupportedWebhookEvent> {
+): Promise<VatlyWebhookEvent> {
   return toWebhookEvent(await constructEvent(rawBody, signatureHeader, secret, options));
 }
 
 /**
- * Verify a Fetch {@link Request} and return a typed event, falling back to
- * {@link UnsupportedWebhookEvent} for a never-before-seen `eventName`. The
- * one-shot equivalent of {@link constructEventFromRequest} + {@link toWebhookEvent}.
+ * Verify a Fetch {@link Request} and return a typed, discriminated
+ * {@link VatlyWebhookEvent}. The one-shot equivalent of
+ * {@link constructEventFromRequest} + {@link toWebhookEvent}.
  */
 export async function constructWebhookEventFromRequest(
   request: Request,
   secret: string | readonly string[],
   options?: VerifyOptions,
-): Promise<MaybeUnsupportedWebhookEvent> {
+): Promise<VatlyWebhookEvent> {
   return toWebhookEvent(await constructEventFromRequest(request, secret, options));
 }
