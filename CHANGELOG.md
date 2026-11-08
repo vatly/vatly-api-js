@@ -7,25 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- Webhook helpers return a disjoint known/unsupported event union. Check the
-  SDK-owned `known` flag before narrowing `eventName`; unknown signed deliveries
-  retain their envelope and an `unknown` object for durable triage.
-- Add safe customer-portal and endpoint-provisioning examples and compile every
-  shipped example against the installed package.
-
-- Remove the public production/staging `server` selector, `VatlyServer`, and
-  environment-specific URL constants. Both live and test keys use the Vatly API
-  URL, exported as `VATLY_BASE_URL`; explicit `baseUrl` overrides remain supported.
-
-### Fixed
-
-- Bind the fetch transport to its global receiver so Cloudflare workerd does not
-  reject requests with `Illegal invocation`. Verified with a real read-only API call.
-- Expose the production customer email filter in `CustomerListParams`.
-
-## 0.3.0-alpha.1 — prepared, not published
+## 0.3.0-alpha.1
 
 ### Added
 
@@ -42,12 +24,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and isolated tarball tests exercising ESM/CJS over real local HTTP, independently
   signed webhooks, NodeNext/Bundler declarations, and compiled examples.
 - Full operation reference, alpha migration notes and updated usage guides.
+- Safe customer-portal and endpoint-provisioning examples, with every shipped
+  example compiled against the installed package.
 
 ### Changed
 
-- Package renamed to `@getvatly/sdk`; GitHub metadata targets `vatly/vatly-js`.
+- Package renamed to `@getvatly/sdk`; GitHub metadata targets `vatly/vatly-api-js`.
 - Version is a prerelease and publication defaults to the `alpha` npm dist-tag.
-  No tag or release is created by this work.
+- Webhook helpers return a disjoint known/unsupported event union. Check the
+  SDK-owned `known` flag before narrowing `eventName`; unknown signed deliveries
+  retain their envelope and an `unknown` object for durable triage.
+- Remove the public production/staging `server` selector, `VatlyServer`, and
+  environment-specific URL constants. Both live and test keys use the Vatly API
+  URL, exported as `VATLY_BASE_URL`; explicit `baseUrl` overrides remain supported.
 - Conditional ESM/CJS exports resolve matching `.d.ts` / `.d.cts` declarations.
   Packing builds the SDK and includes docs, examples, banner, and OpenAPI reference.
 - Money currencies and pagination link fields now derive directly from generated
@@ -61,6 +50,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Bind the fetch transport to its global receiver so Cloudflare workerd does not
+  reject requests with `Illegal invocation`. Verified with a real read-only API call.
+- Expose the production customer email filter in `CustomerListParams`.
 - Timeouts remain active through body consumption; cancellation interrupts
   backoff, and an already-aborted request never reaches fetch.
 - Header merging is case-insensitive and header-supplied idempotency keys are
@@ -77,7 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Authenticated Vatly integration tests and edge-runtime deployment tests have
   not been run. Account-specific credentials/resources and npm scope access are
-  needed before external release validation. GitHub transfer precedes publication.
+  needed before external release validation.
 
 ## Earlier unreleased baseline work
 
