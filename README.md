@@ -5,8 +5,8 @@
 Server-side JavaScript / TypeScript SDK for [Vatly](https://vatly.com), the
 Merchant of Record for European software and digital products.
 
-**Alpha candidate: `0.3.0-alpha.1`.** Prepared for publication, not yet released
-by this change. The public API may change during alpha. npm scope: `@getvatly`;
+**Alpha: `0.3.0-alpha.1`.** The public API may change during alpha.
+npm scope: `@getvatly`;
 GitHub home: `vatly/vatly-api-js`.
 
 - All 50 REST operations in the [production OpenAPI spec](https://docs.vatly.com/openapi.yaml).
