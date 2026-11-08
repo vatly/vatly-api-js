@@ -42,7 +42,7 @@ on [`WebhookEventName`](../src/webhooks/events.ts).
 
 `constructWebhookEventFromRequest` reads the raw body and `Vatly-Signature`
 header off a Fetch `Request`, verifies the HMAC, and returns a **discriminated**
-event. Switching on `event.eventName` narrows `event.object` to the exact
+event. Check `event.known` first, then switch on `event.eventName` to narrow `event.object` to the exact
 resource — no casts, no follow-up API call (Vatly sends fat, signed payloads, so
 `object` is the full `GET /…/{id}` snapshot).
 
@@ -57,6 +57,11 @@ export async function POST(request: Request): Promise<Response> {
     return new Response("invalid signature", { status: 400 });
   }
 
+  if (!event.known) {
+    // Retain the verified envelope durably for triage, then acknowledge it.
+    // Until retention succeeds, retry rather than silently losing the delivery.
+    return new Response("unsupported event requires triage", { status: 503 });
+  }
   switch (event.eventName) {
     case "order.paid":
       event.object.total; // Money — typed as Order
@@ -75,6 +80,15 @@ If you already have the raw bytes (e.g. a non-Fetch framework), use
 `constructWebhookEvent(rawBody, signatureHeader, secret)`. To verify only and
 get the raw `WebhookDelivery` envelope, use `constructEvent` /
 `constructEventFromRequest`, then narrow later with `toWebhookEvent(delivery)`.
+
+`VatlyWebhookEvent` includes `KnownWebhookEvent` (`known: true`) and
+`UnsupportedWebhookEvent` (`known: false`, `eventName: string`, `object: unknown`).
+The SDK adds this discriminator to a shallow copy after verification, overwriting
+any wire-supplied flag. It classifies the event name, not the resource schema.
+Both sides of `if (event.known)` narrow normally; no custom type guards are needed.
+Unknown event names can appear before an SDK upgrade. Keep them for triage and
+decide acknowledgement policy explicitly; a successful HMAC is not a reason to
+discard an event you cannot yet process.
 
 > **Always verify against the raw body bytes.** Re-serializing the JSON changes
 > the bytes (whitespace, key order, number formatting) and breaks the HMAC.

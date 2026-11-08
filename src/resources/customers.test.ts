@@ -69,6 +69,15 @@ describe("customers", () => {
     expect(calls[0]!.url).toContain("/customers/customer_1/subscriptions/subscription_1");
   });
 
+  it("creates a portal session with an empty body when options are omitted", async () => {
+    const { client, calls } = makeTestClient([
+      { status: 201, body: { url: "https://example.com/portal", expiresAt: "2030-01-01" } },
+    ]);
+    const session = await client.customers.createPortalSession("customer_1");
+    expect(session.url).toBe("https://example.com/portal");
+    expect(JSON.parse(calls[0]!.body!)).toEqual({});
+  });
+
   it("listAllSubscriptions paginates the nested collection", async () => {
     const base = "/customers/customer_1/subscriptions";
     const { client, calls } = makeTestClient([

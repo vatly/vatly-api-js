@@ -165,6 +165,10 @@ import { constructWebhookEventFromRequest } from "@getvatly/sdk/webhooks";
 
 export async function POST(request: Request): Promise<Response> {
   const event = await constructWebhookEventFromRequest(request, process.env.VATLY_WEBHOOK_SECRET!);
+  if (!event.known) {
+    // Durably retain for triage before acknowledging; retry until that succeeds.
+    return new Response("unsupported event requires triage", { status: 503 });
+  }
   switch (event.eventName) {
     case "order.paid":
       console.log(event.object.total); // Order, no cast
@@ -184,6 +188,15 @@ Verify **raw bytes**, not reserialized JSON. `Vatly-Signature` is
 tolerance is 300 seconds; `{ toleranceSeconds: 0 }` disables freshness checks
 only for deliberate historical replay. Invalid signatures throw
 `VatlyInvalidSignatureError`. The request helper consumes the body.
+
+`VatlyWebhookEvent` is a disjoint union of `KnownWebhookEvent` (`known: true`)
+and `UnsupportedWebhookEvent` (`known: false`, arbitrary name, `object: unknown`).
+Check `event.known` before switching on `eventName`. The SDK computes this flag
+after signature verification; a flag supplied in the wire payload cannot override
+it. Both branches preserve the envelope and resource snapshot. Classification
+does not validate resource schemas. Low-level `constructEvent*` returns the raw
+wire shape without classification; `toWebhookEvent` classifies an already-verified
+delivery without mutating it.
 
 The SDK is stateless. After verification, use the **signed `event.id`** to
 deduplicate with transactional processing in your database; the unsigned

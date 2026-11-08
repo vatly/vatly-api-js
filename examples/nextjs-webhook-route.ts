@@ -30,6 +30,13 @@ export async function POST(request: Request): Promise<Response> {
   // const eventId = event.id; // verified payload, not an untrusted header
   // if (await store.seen(eventId)) return new Response("ok");
 
+  if (!event.known) {
+    // Production: durably retain the verified envelope for triage before a 2xx.
+    // Fail/retry until that write succeeds; do not silently discard billing events.
+    console.warn("unsupported Vatly event; update SDK and retain for triage", event.eventName);
+    return new Response("unsupported event requires triage", { status: 503 });
+  }
+
   switch (event.eventName) {
     case "order.paid":
       // event.object is a fully-typed Order — incl. total/subtotal/taxSummary/lines.

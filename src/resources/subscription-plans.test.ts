@@ -25,6 +25,14 @@ describe("subscriptionPlans", () => {
     expect(res.data[0]!.id).toBe("subscription_plan_1");
   });
 
+  it.each([true, false, undefined])("preserves the includeArchived filter %s", async (filter) => {
+    const { client, calls } = makeTestClient([{ body: page([]) }]);
+    await client.subscriptionPlans.list({ includeArchived: filter });
+    expect(new URL(calls[0]!.url).searchParams.get("includeArchived")).toBe(
+      filter === undefined ? null : String(filter),
+    );
+  });
+
   it("get GETs and url-encodes the id", async () => {
     const { client, calls } = makeTestClient([
       { status: 200, body: { id: "subscription_plan_1" } },

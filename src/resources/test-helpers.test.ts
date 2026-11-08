@@ -37,5 +37,6 @@ describe("testHelpers", () => {
     await client.testHelpers.fastForwardRenewal("sub_1");
     expect(calls[0]!.url).toContain("/test-helpers/subscriptions/sub_1/fast-forward-renewal");
     expect(calls[0]!.method).toBe("POST");
+    expect(JSON.parse(calls[0]!.body!)).toEqual({});
   });
 });

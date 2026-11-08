@@ -84,8 +84,20 @@ client.testHelpers.fastForwardRenewal("sub_1", { paymentStatus: "paid" });
 client.testHelpers.simulateOrderPayment("order_1", { paymentStatus: "failed" });
 const event: Promise<VatlyWebhookEvent> = constructWebhookEvent("{}", "signature", "secret");
 function handle(e: VatlyWebhookEvent) {
+  if (!e.known) {
+    const name: string = e.eventName;
+    const object: unknown = e.object;
+    // @ts-expect-error unsupported resource shapes must be checked by the caller
+    e.object.id;
+    return name;
+  }
   if (e.eventName === "subscription.updated") { const sub: Subscription = e.object; return sub.scheduledUpdate; }
   if (e.eventName === "one_off_product.archived") return e.object.archivedAt;
+}
+function handleKnownFirst(e: VatlyWebhookEvent) {
+  if (e.known) return e.eventName;
+  const name: string = e.eventName;
+  return name;
 }
 // @ts-expect-error paymentStatus is required
 client.testHelpers.simulateOrderPayment("order_1", {});
@@ -93,10 +105,11 @@ client.testHelpers.simulateOrderPayment("order_1", {});
 client.oneOffProducts.create({ ...product, basePrice: { value: "12.34", currency: "USD" } });
 `;
   for (const extension of ["mts", "cts"]) writeFileSync(join(temp, `consumer.${extension}`), consumer);
-  for (const example of ["basic-crud", "nextjs-webhook-route"]) copyFileSync(join(root, "examples", `${example}.ts`), join(temp, `${example}.mts`));
+  const examples = ["basic-crud", "nextjs-webhook-route", "customer-portal", "webhook-endpoints"];
+  for (const example of examples) copyFileSync(join(root, "examples", `${example}.ts`), join(temp, `${example}.mts`));
   const tsc = join(root, "node_modules/typescript/bin/tsc");
   const args = ["--noEmit", "--strict", "--target", "ES2022", "--typeRoots", join(root, "node_modules/@types"), "--types", "node"];
-  run(process.execPath, [tsc, ...args, "--module", "NodeNext", "--moduleResolution", "NodeNext", "consumer.mts", "consumer.cts", "basic-crud.mts", "nextjs-webhook-route.mts"]);
+  run(process.execPath, [tsc, ...args, "--module", "NodeNext", "--moduleResolution", "NodeNext", "consumer.mts", "consumer.cts", ...examples.map(example => `${example}.mts`)]);
   run(process.execPath, [tsc, ...args, "--module", "ESNext", "--moduleResolution", "Bundler", "consumer.mts"]);
   const installed = JSON.parse(readFileSync(join(temp, "node_modules/@getvatly/sdk/package.json"), "utf8"));
   assert.equal(installed.publishConfig.tag, "alpha");

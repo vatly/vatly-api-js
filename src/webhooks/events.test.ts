@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Order, Webhook } from "../types.js";
 import {
-  type VatlyWebhookEvent,
+  type KnownWebhookEvent,
   WEBHOOK_EVENT_NAMES,
   WebhookEventName,
   constructWebhookEvent,
@@ -84,7 +84,8 @@ describe("webhook event factory", () => {
       );
 
       expect(event.eventName).toBe("order.paid");
-      if (event.eventName === "order.paid") {
+      expect(event.known).toBe(true);
+      if (event.known && event.eventName === "order.paid") {
         // Compiles only if `object` narrowed to Order:
         const order: Order = event.object;
         expect(order.id).toBe("order_1");
@@ -98,7 +99,7 @@ describe("webhook event factory", () => {
       });
 
       expect(event.eventName).toBe("webhook.setup");
-      if (event.eventName === "webhook.setup") {
+      if (event.known && event.eventName === "webhook.setup") {
         const webhook: Webhook = event.object;
         expect(webhook.url).toBe("https://merchant.example/hook");
       }
@@ -119,14 +120,16 @@ describe("webhook event factory", () => {
   });
 
   describe("toWebhookEvent", () => {
-    it("is pure narrowing (returns the same value, exhaustive switch type-checks)", () => {
+    it("classifies without changing signed fields (known switch remains exhaustive)", () => {
       const delivery = JSON.parse(orderPaidBody);
       const event = toWebhookEvent(delivery);
-      expect(event).toBe(delivery);
+      expect(event).toEqual({ ...delivery, known: true });
+      expect(delivery).not.toHaveProperty("known");
+      if (!event.known) throw new Error("Expected a known event");
 
       // Exhaustiveness: the union is closed, so a fully-handled switch leaves
       // `never` in the default — this function compiling proves it.
-      const describe = (e: VatlyWebhookEvent): string => {
+      const describe = (e: KnownWebhookEvent): string => {
         switch (e.eventName) {
           case "order.paid":
           case "order.canceled":
@@ -174,6 +177,23 @@ describe("webhook event factory", () => {
         }
       };
       expect(describe(event)).toBe("order_1");
+    });
+
+    it("preserves signed future events and ignores a wire-supplied known flag", async () => {
+      const delivery = {
+        ...JSON.parse(orderPaidBody),
+        known: true,
+        eventName: "order.future_event",
+        object: { futureField: 42 },
+      };
+      const raw = JSON.stringify(delivery);
+      const signature = await signed(raw);
+      const event = await constructWebhookEvent(raw, signature, SECRET, { now: FROZEN_NOW });
+      expect(event).toEqual({ ...delivery, known: false });
+      expect(toWebhookEvent({ ...JSON.parse(orderPaidBody), known: false }).known).toBe(true);
+      await expect(
+        constructWebhookEvent(`${raw} `, signature, SECRET, { now: FROZEN_NOW }),
+      ).rejects.toThrow(/signature/i);
     });
   });
 });

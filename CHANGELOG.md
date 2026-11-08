@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Webhook helpers return a disjoint known/unsupported event union. Check the
+  SDK-owned `known` flag before narrowing `eventName`; unknown signed deliveries
+  retain their envelope and an `unknown` object for durable triage.
+- Add safe customer-portal and endpoint-provisioning examples and compile every
+  shipped example against the installed package.
+
 - Remove the public production/staging `server` selector, `VatlyServer`, and
   environment-specific URL constants. Both live and test keys use the Vatly API
   URL, exported as `VATLY_BASE_URL`; explicit `baseUrl` overrides remain supported.

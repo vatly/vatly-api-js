@@ -13,6 +13,7 @@
  *
  * ```ts
  * const event = await constructWebhookEvent(rawBody, signature, secret);
+ * if (!event.known) return recordUnsupported(event);
  * switch (event.eventName) {
  *   case "order.paid":
  *     event.object.total;      // Money — fully typed, no cast
@@ -156,17 +157,27 @@ export type WebhookEventEnvelope = Omit<WebhookDelivery, "eventName" | "object">
 
 /** A single typed event: the envelope plus a narrowed `eventName` / `object` pair. */
 export type WebhookEventOfType<K extends WebhookEventName> = WebhookEventEnvelope & {
+  known: true;
   eventName: K;
   object: EventObjectMap[K];
 };
 
 /**
- * A verified webhook delivery, discriminated by `eventName`. Switching on
- * `eventName` narrows `object` to the matching resource type.
+ * A known delivery, discriminated by `eventName` to narrow its resource type.
  */
-export type VatlyWebhookEvent = {
+export type KnownWebhookEvent = {
   [K in WebhookEventName]: WebhookEventOfType<K>;
 }[WebhookEventName];
+
+/** A verified delivery newer than this SDK's catalogue. Retain it for triage. */
+export type UnsupportedWebhookEvent = WebhookEventEnvelope & {
+  known: false;
+  eventName: string;
+  object: unknown;
+};
+
+/** Check `known` before switching on `eventName` to narrow the resource. */
+export type VatlyWebhookEvent = KnownWebhookEvent | UnsupportedWebhookEvent;
 
 // Named per-event aliases (mirror the PHP event DTO classes), for callers that
 // want to annotate a handler with a single event's type.
@@ -215,16 +226,21 @@ export type WebhookSetupEvent = WebhookEventOfType<"webhook.setup">;
 
 /**
  * Refine an already-verified {@link WebhookDelivery} into a discriminated
- * {@link VatlyWebhookEvent}. Pure type narrowing — the runtime value is
- * unchanged (the spec guarantees the `eventName` → `object` correlation, which
- * the type system can't prove on its own).
+ * {@link VatlyWebhookEvent}. Returns a shallow copy with an SDK-owned `known`
+ * discriminator; the signed fields and resource snapshot are preserved.
+ * This classifies event names, not resource schemas. It does not verify signatures.
  *
  * Use this when you verified the signature yourself (e.g. via `constructEvent`)
  * and want the narrowed event. To verify and narrow in one step, use
  * {@link constructWebhookEvent} / {@link constructWebhookEventFromRequest}.
  */
-export function toWebhookEvent(delivery: WebhookDelivery): VatlyWebhookEvent {
-  return delivery as VatlyWebhookEvent;
+export function toWebhookEvent(
+  delivery: WebhookEventEnvelope & { eventName: string; object: unknown },
+): VatlyWebhookEvent {
+  return {
+    ...delivery,
+    known: isWebhookEventName(delivery.eventName),
+  } as VatlyWebhookEvent;
 }
 
 /**
