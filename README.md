@@ -2,10 +2,12 @@
 
 # @getvatly/sdk
 
+> **Alpha — under active development. Every alpha release may include breaking changes. Pin exact versions during alpha.**
+
 Server-side JavaScript / TypeScript SDK for [Vatly](https://vatly.com), the
 Merchant of Record for European software and digital products.
 
-**Alpha: `0.3.0-alpha.1`.** The public API may change during alpha.
+**Current alpha: `0.3.0-alpha.1`.**
 npm scope: `@getvatly`;
 GitHub home: `vatly/vatly-api-js`.
 
