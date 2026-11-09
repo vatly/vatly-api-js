@@ -11,7 +11,8 @@ Merchant of Record for European software and digital products.
 npm scope: `@getvatly`;
 GitHub home: `vatly/vatly-api-js`.
 
-- All 50 REST operations in the [production OpenAPI spec](https://docs.vatly.com/openapi.yaml).
+- All 50 REST operations in the [API reference](https://docs.vatly.com/api-reference),
+  with an [OpenAPI spec](https://docs.vatly.com/openapi.yaml) for tooling.
 - Generated request/resource types and 32 discriminated webhook events.
 - ESM + CommonJS, matching `.d.ts` / `.d.cts` declarations, no runtime dependencies.
 - Native `fetch`, `Headers`, `AbortController`, and Web Crypto. Node 20+;
