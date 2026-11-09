@@ -34,6 +34,78 @@ describe("oneOffProducts", () => {
     expect(calls[0]!.url).toContain("/one-off-products/one_off_product_1");
   });
 
+  it("list forwards includeArchived", async () => {
+    const { client, calls } = makeTestClient([{ status: 200, body: page([]) }]);
+
+    await client.oneOffProducts.list({ includeArchived: true });
+
+    expect(calls[0]!.url).toContain("includeArchived=true");
+  });
+
+  it("create accepts the minimal body (taxBehavior defaulted server-side)", async () => {
+    const { client, calls } = makeTestClient([{ status: 201, body: { id: "one_off_product_1" } }]);
+
+    await client.oneOffProducts.create({
+      name: "Premium License",
+      description: "Lifetime access to all premium features",
+      basePrice: { value: "299.00", currency: "EUR" },
+      productType: "saas",
+    });
+
+    const sent = JSON.parse(calls[0]!.body!);
+    expect(sent).not.toHaveProperty("taxBehavior");
+  });
+
+  it("create POSTs the body to /one-off-products", async () => {
+    const { client, calls } = makeTestClient([{ status: 201, body: { id: "one_off_product_1" } }]);
+
+    await client.oneOffProducts.create({
+      name: "Premium License",
+      description: "Lifetime access to all premium features",
+      basePrice: { value: "299.00", currency: "EUR" },
+      productType: "saas",
+      taxBehavior: "exclusive",
+    });
+
+    expect(calls[0]!.method).toBe("POST");
+    expect(calls[0]!.url).toContain("/one-off-products");
+    expect(JSON.parse(calls[0]!.body!).name).toBe("Premium License");
+  });
+
+  it("update PATCHes /one-off-products/{id}", async () => {
+    const { client, calls } = makeTestClient([{ status: 200, body: { id: "one_off_product_1" } }]);
+
+    await client.oneOffProducts.update("one_off_product_1", {
+      description: "Now with more premium",
+    });
+
+    expect(calls[0]!.method).toBe("PATCH");
+    expect(calls[0]!.url).toContain("/one-off-products/one_off_product_1");
+    expect(JSON.parse(calls[0]!.body!)).toEqual({ description: "Now with more premium" });
+  });
+
+  it("archive POSTs /one-off-products/{id}/archive and ignores a 204 body", async () => {
+    const { client, calls } = makeTestClient([{ status: 204 }]);
+
+    const result = await client.oneOffProducts.archive("one_off_product_1");
+
+    expect(calls[0]!.method).toBe("POST");
+    expect(calls[0]!.url).toContain("/one-off-products/one_off_product_1/archive");
+    expect(result).toBeUndefined();
+  });
+
+  it("unarchive DELETEs /one-off-products/{id}/archive and returns the product", async () => {
+    const { client, calls } = makeTestClient([
+      { status: 200, body: { id: "one_off_product_1", archivedAt: null } },
+    ]);
+
+    const product = await client.oneOffProducts.unarchive("one_off_product_1");
+
+    expect(calls[0]!.method).toBe("DELETE");
+    expect(calls[0]!.url).toContain("/one-off-products/one_off_product_1/archive");
+    expect(product.id).toBe("one_off_product_1");
+  });
+
   it("listAll walks pages", async () => {
     const { client, calls } = makeTestClient([
       {

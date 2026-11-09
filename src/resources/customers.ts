@@ -27,17 +27,39 @@ export class CustomersResource extends BaseResource {
     return this.request<Customer>({ method: "POST", path: "/customers", body }, opts);
   }
 
+  get(customerId: string, opts?: RequestOptions): Promise<Customer> {
+    return this.request<Customer>(
+      { method: "GET", path: `/customers/${encodeURIComponent(customerId)}` },
+      opts,
+    );
+  }
+
+  /**
+   * PATCH /customers/{id}
+   * Updates `name` and/or `email`. Billing-address fields are ignored here —
+   * amend those through the hosted billing-update flow instead.
+   */
   update(
     customerId: string,
     body: UpdateCustomerRequest,
     opts?: RequestOptions,
   ): Promise<Customer> {
     return this.request<Customer>(
-      { method: "PATCH", path: `/customers/${encodeURIComponent(customerId)}`, body },
+      {
+        method: "PATCH",
+        path: `/customers/${encodeURIComponent(customerId)}`,
+        body,
+      },
       opts,
     );
   }
 
+  /**
+   * POST /customers/{id}/portal-sessions
+   * Creates a short-lived, single-use URL into the hosted customer portal.
+   * Redirect the customer's browser to the returned `url` — do not store it
+   * as a long-lived account link.
+   */
   createPortalSession(
     customerId: string,
     body: CreatePortalSessionRequest = {},
@@ -49,13 +71,6 @@ export class CustomersResource extends BaseResource {
         path: `/customers/${encodeURIComponent(customerId)}/portal-sessions`,
         body,
       },
-      opts,
-    );
-  }
-
-  get(customerId: string, opts?: RequestOptions): Promise<Customer> {
-    return this.request<Customer>(
-      { method: "GET", path: `/customers/${encodeURIComponent(customerId)}` },
       opts,
     );
   }
