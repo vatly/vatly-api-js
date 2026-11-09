@@ -9,11 +9,9 @@ import {
   VatlyApiError,
   VatlyAuthError,
   VatlyConflictError,
-  VatlyConnectionError,
   VatlyForbiddenError,
   VatlyNotFoundError,
   VatlyRateLimitError,
-  VatlyTimeoutError,
   VatlyValidationError,
 } from "./errors.js";
 import { makeFetchSequence } from "./test-utils.js";
@@ -193,6 +191,61 @@ describe("http", () => {
       const client = makeClient({ fetch, maxRetries: 0 });
       await expect(client.checkouts.get("x")).rejects.toBeInstanceOf(VatlyApiError);
     });
+
+    it.each([
+      { status: 200, body: undefined },
+      { status: 204, body: undefined },
+      { status: 200, body: "null" },
+    ])(
+      "rejects missing resource bodies ($status, $body) with request context",
+      async (response) => {
+        const { fetch } = makeFetchSequence([response]);
+        const client = makeClient({ fetch });
+        for (const [method, url, request] of [
+          [
+            "GET",
+            "https://api.example.com/v1/customers/customer_1",
+            () => client.customers.get("customer_1"),
+          ],
+          ["GET", "https://api.example.com/v1/customers", () => client.customers.list()],
+          [
+            "POST",
+            "https://api.example.com/v1/customers",
+            () => client.customers.create(aCreateCustomerRequest()),
+          ],
+        ] as const) {
+          await expect(request()).rejects.toMatchObject({
+            name: "VatlyApiError",
+            message: expect.stringContaining("Invalid Vatly response"),
+            status: response.status,
+            method,
+            url,
+          });
+        }
+      },
+    );
+
+    it("retains request context and cause for connection failures", async () => {
+      const cause = new TypeError("Connection failed");
+      const { fetch } = makeFetchSequence([{ networkError: cause }]);
+      await expect(makeClient({ fetch }).customers.get("customer/1")).rejects.toMatchObject({
+        name: "VatlyConnectionError",
+        status: 0,
+        method: "GET",
+        url: "https://api.example.com/v1/customers/customer%2F1",
+        cause,
+      });
+    });
+
+    it.each([200, 204])("accepts empty %s for no-content operations", async (status) => {
+      const { fetch } = makeFetchSequence([{ status }]);
+      const client = makeClient({ fetch });
+      await expect(client.subscriptions.cancel("subscription_1")).resolves.toBeUndefined();
+      await expect(client.orders.cancelRefund("order_1", "refund_1")).resolves.toBeUndefined();
+      await expect(client.webhookEndpoints.delete("webhook_1")).resolves.toBeUndefined();
+      await expect(client.oneOffProducts.archive("product_1")).resolves.toBeUndefined();
+      await expect(client.subscriptionPlans.archive("plan_1")).resolves.toBeUndefined();
+    });
   });
 
   describe("retries", () => {
@@ -262,19 +315,30 @@ describe("http", () => {
         );
       await expect(
         makeClient({ fetch, timeoutMs: 10 }).orders.get("order_1"),
-      ).rejects.toBeInstanceOf(VatlyTimeoutError);
+      ).rejects.toMatchObject({
+        name: "VatlyTimeoutError",
+        method: "GET",
+        url: "https://api.example.com/v1/orders/order_1",
+        cause: expect.any(Error),
+      });
     });
 
     it("aborts during Retry-After without another request", async () => {
       const controller = new AbortController();
+      const cause = new Error("stop");
       const { fetch, calls } = makeFetchSequence([
         { status: 429, headers: { "Retry-After": "120" }, body: { message: "Wait" } },
       ]);
       const promise = makeClient({ fetch, maxRetries: 2 }).orders.get("order_1", {
         signal: controller.signal,
       });
-      setTimeout(() => controller.abort(new Error("stop")), 10);
-      await expect(promise).rejects.toBeInstanceOf(VatlyConnectionError);
+      setTimeout(() => controller.abort(cause), 10);
+      await expect(promise).rejects.toMatchObject({
+        name: "VatlyConnectionError",
+        method: "GET",
+        url: "https://api.example.com/v1/orders/order_1",
+        cause,
+      });
       expect(calls).toHaveLength(1);
     });
 
@@ -299,8 +363,35 @@ describe("http", () => {
       const { fetch, calls } = makeFetchSequence([{ body: {} }]);
       await expect(
         makeClient({ fetch }).orders.get("order_1", { signal: AbortSignal.abort("stop") }),
-      ).rejects.toBeInstanceOf(VatlyConnectionError);
+      ).rejects.toMatchObject({
+        name: "VatlyConnectionError",
+        method: "GET",
+        url: "https://api.example.com/v1/orders/order_1",
+        cause: "stop",
+      });
       expect(calls).toHaveLength(0);
+    });
+
+    it("retains request context when aborted during fetch", async () => {
+      const controller = new AbortController();
+      const cause = new Error("stop");
+      const fetch: typeof globalThis.fetch = async (_, init) => {
+        const pending = new Promise<Response>((_, reject) => {
+          init!.signal!.addEventListener("abort", () => reject(init!.signal!.reason), {
+            once: true,
+          });
+        });
+        controller.abort(cause);
+        return pending;
+      };
+      await expect(
+        makeClient({ fetch }).orders.get("order_1", { signal: controller.signal }),
+      ).rejects.toMatchObject({
+        name: "VatlyConnectionError",
+        method: "GET",
+        url: "https://api.example.com/v1/orders/order_1",
+        cause,
+      });
     });
 
     it("rejects invalid JSON success responses rather than returning a false resource type", async () => {

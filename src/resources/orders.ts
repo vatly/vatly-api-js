@@ -114,6 +114,7 @@ export class OrdersResource extends BaseResource {
     return this.request<void>(
       {
         method: "DELETE",
+        responseType: "void",
         path: `/orders/${encodeURIComponent(orderId)}/refunds/${encodeURIComponent(refundId)}`,
       },
       opts,

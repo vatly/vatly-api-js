@@ -95,8 +95,8 @@ export class VatlyRateLimitError extends VatlyError {
 
 /** Catch-all for 4xx/5xx outside the specific classes above. */
 export class VatlyApiError extends VatlyError {
-  constructor(ctx: VatlyErrorContext) {
-    super(messageFrom(ctx) ?? `Vatly API error (${ctx.status}).`, ctx);
+  constructor(ctx: VatlyErrorContext, message?: string) {
+    super(message ?? messageFrom(ctx) ?? `Vatly API error (${ctx.status}).`, ctx);
     this.name = "VatlyApiError";
   }
 }
@@ -104,16 +104,24 @@ export class VatlyApiError extends VatlyError {
 /** Network-level failures (DNS, TLS, abort, etc.) — not an API response. */
 export class VatlyConnectionError extends VatlyError {
   override readonly cause: unknown;
-  constructor(message: string, cause: unknown) {
-    super(message, { status: 0 });
+  constructor(
+    message: string,
+    cause: unknown,
+    ctx: Pick<VatlyErrorContext, "url" | "method"> = {},
+  ) {
+    super(message, { ...ctx, status: 0 });
     this.name = "VatlyConnectionError";
     this.cause = cause;
   }
 }
 
 export class VatlyTimeoutError extends VatlyConnectionError {
-  constructor(timeoutMs: number, cause: unknown) {
-    super(`Vatly request timed out after ${timeoutMs}ms`, cause);
+  constructor(
+    timeoutMs: number,
+    cause: unknown,
+    ctx: Pick<VatlyErrorContext, "url" | "method"> = {},
+  ) {
+    super(`Vatly request timed out after ${timeoutMs}ms`, cause, ctx);
     this.name = "VatlyTimeoutError";
   }
 }

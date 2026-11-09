@@ -52,6 +52,7 @@ export class SubscriptionsResource extends BaseResource {
     return this.request<void>(
       {
         method: "DELETE",
+        responseType: "void",
         path: `/subscriptions/${encodeURIComponent(subscriptionId)}`,
         // Laravel's boolean query validation accepts 1/0, not the strings true/false.
         query: {

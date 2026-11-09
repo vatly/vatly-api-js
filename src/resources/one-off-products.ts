@@ -47,7 +47,11 @@ export class OneOffProductsResource extends BaseResource {
 
   archive(oneOffProductId: string, opts?: RequestOptions): Promise<void> {
     return this.request(
-      { method: "POST", path: `/one-off-products/${encodeURIComponent(oneOffProductId)}/archive` },
+      {
+        method: "POST",
+        path: `/one-off-products/${encodeURIComponent(oneOffProductId)}/archive`,
+        responseType: "void",
+      },
       opts,
     );
   }

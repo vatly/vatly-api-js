@@ -62,6 +62,8 @@ export interface RawRequest {
   query?: Record<string, unknown>;
   /** JSON body — serialized as application/json. */
   body?: unknown;
+  /** Only operations documented without a response body may accept empty success. */
+  responseType?: "void";
 }
 
 export type FetchMiddleware = (
@@ -72,7 +74,7 @@ export type FetchMiddleware = (
 
 /**
  * Execute a request with auth, timeout, idempotency, retries, and error mapping.
- * Returns the parsed JSON body on success (or `undefined` for 204).
+ * Requires a non-null JSON body unless the operation declares a void response.
  */
 export async function performRequest<T>(
   req: RawRequest,
@@ -81,6 +83,7 @@ export async function performRequest<T>(
 ): Promise<T> {
   const url = buildUrl(config.baseUrl, req.path, req.query);
   const method = req.method.toUpperCase();
+  const context = { url, method };
   const safe = SAFE_METHODS.has(method);
 
   // Resolve the Idempotency-Key value (caller > auto-generator > none).
@@ -126,7 +129,7 @@ export async function performRequest<T>(
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     if (options.signal?.aborted)
-      throw new VatlyConnectionError("Request aborted by caller.", options.signal.reason);
+      throw new VatlyConnectionError("Request aborted by caller.", options.signal.reason, context);
     const { signal, cancel } = makeSignal(timeoutMs, options.signal);
     let delay: number | undefined;
     try {
@@ -137,7 +140,7 @@ export async function performRequest<T>(
         signal,
       });
       if (response.ok) {
-        return (await parseResponse<T>(response, url, method)) as T;
+        return (await parseResponse<T>(response, url, method, req.responseType !== "void")) as T;
       }
 
       const retryAfter = parseRetryAfter(response.headers.get("Retry-After"));
@@ -162,14 +165,15 @@ export async function performRequest<T>(
 
       // Network-layer failure or abort.
       if (options.signal?.aborted) {
-        throw new VatlyConnectionError("Request aborted by caller.", err);
+        throw new VatlyConnectionError("Request aborted by caller.", err, context);
       }
       const connErr =
         signal.aborted || isAbortError(err)
-          ? new VatlyTimeoutError(timeoutMs, err)
+          ? new VatlyTimeoutError(timeoutMs, err, context)
           : new VatlyConnectionError(
               err instanceof Error ? err.message : "Network request failed.",
               err,
+              context,
             );
       if (retryable && attempt < maxAttempts - 1) {
         lastError = connErr;
@@ -180,7 +184,7 @@ export async function performRequest<T>(
     } finally {
       cancel();
     }
-    await sleep(delay!, options.signal);
+    await sleep(delay!, options.signal, context);
   }
 
   // Should be unreachable, but TypeScript can't prove it.
@@ -191,14 +195,19 @@ async function parseResponse<T>(
   response: Response,
   url: string,
   method: string,
+  expectBody: boolean,
 ): Promise<T | undefined> {
-  if (response.status === 204) return undefined;
-  const text = await response.text();
-  if (text.length === 0) return undefined;
+  const text = response.status === 204 ? "" : await response.text();
+  if (!expectBody && text.length === 0) return undefined;
   try {
-    return JSON.parse(text) as T;
+    const body = JSON.parse(text) as T;
+    if (expectBody && body === null) throw new Error("Null response");
+    return body;
   } catch {
-    throw new VatlyApiError({ status: response.status, body: text, url, method });
+    throw new VatlyApiError(
+      { status: response.status, body: text, url, method },
+      "Invalid Vatly response: expected a non-null JSON body.",
+    );
   }
 }
 
@@ -255,12 +264,16 @@ function isAbortError(err: unknown): boolean {
   return name === "AbortError" || name === "TimeoutError";
 }
 
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+function sleep(
+  ms: number,
+  signal: AbortSignal | undefined,
+  context: { url: string; method: string },
+): Promise<void> {
   return new Promise((resolve, reject) => {
     const onAbort = () => {
       clearTimeout(timer);
       signal?.removeEventListener("abort", onAbort);
-      reject(new VatlyConnectionError("Request aborted by caller.", signal?.reason));
+      reject(new VatlyConnectionError("Request aborted by caller.", signal?.reason, context));
     };
     const timer = setTimeout(() => {
       signal?.removeEventListener("abort", onAbort);

@@ -47,7 +47,11 @@ export class WebhookEndpointsResource extends BaseResource {
 
   delete(webhookEndpointId: string, opts?: RequestOptions): Promise<void> {
     return this.request(
-      { method: "DELETE", path: `/webhook-endpoints/${encodeURIComponent(webhookEndpointId)}` },
+      {
+        method: "DELETE",
+        path: `/webhook-endpoints/${encodeURIComponent(webhookEndpointId)}`,
+        responseType: "void",
+      },
       opts,
     );
   }

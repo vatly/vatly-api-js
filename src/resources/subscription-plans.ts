@@ -53,6 +53,7 @@ export class SubscriptionPlansResource extends BaseResource {
     return this.request(
       {
         method: "POST",
+        responseType: "void",
         path: `/subscription-plans/${encodeURIComponent(subscriptionPlanId)}/archive`,
       },
       opts,
