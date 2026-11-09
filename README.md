@@ -7,7 +7,7 @@
 Server-side JavaScript / TypeScript SDK for [Vatly](https://vatly.com), the
 Merchant of Record for European software and digital products.
 
-**Current alpha: `0.3.0-alpha.1`.**
+**Current alpha: `0.3.0-alpha.2`.**
 npm scope: `@getvatly`;
 GitHub home: `vatly/vatly-api-js`.
 
@@ -21,11 +21,11 @@ GitHub home: `vatly/vatly-api-js`.
 
 ## Install
 
-Once the alpha is published:
+Pin the alpha version explicitly:
 
 ```bash
-npm install @getvatly/sdk@alpha
-# or: pnpm add @getvatly/sdk@alpha / yarn add @getvatly/sdk@alpha
+npm install --save-exact @getvatly/sdk@0.3.0-alpha.2
+# or: pnpm add --save-exact @getvatly/sdk@0.3.0-alpha.2
 ```
 
 Before publication, `pnpm install --frozen-lockfile && pnpm build && npm pack`
@@ -245,7 +245,7 @@ been performed in this change. No fluent wrapper or PHP port is included.
    restricted to the SDK and Fluent repositories. Never commit it. Remove any
    repository-level secret of the same name, which would override the org secret.
 3. Commit the release changes and publish a GitHub prerelease tagged
-   `v0.3.0-alpha.1` at that commit. `.github/workflows/release.yml` verifies the
+   `v0.3.0-alpha.2` at that commit. `.github/workflows/release.yml` verifies the
    version and package, then runs `npm stage publish` with provenance and the
    `alpha` tag. Pushing a Git tag alone does not trigger staging.
 4. Review the candidate in npm's **Staged Packages** tab and approve it with 2FA.

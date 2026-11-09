@@ -64,7 +64,7 @@ export interface VatlyClientOptions {
    * Merged on top of the auto-detected `runtime` / `os` / `arch` defaults:
    *
    *   new VatlyClient({ clientInfo: { app: "MyApp/1.2.3", framework: "Next.js/14" } });
-   *   // Vatly-Client-Info: sdk=vatly-sdk-js/0.3.0-alpha.1; runtime=node/v25.9.0; os=darwin; arch=arm64; app=MyApp/1.2.3; framework=Next.js/14
+   *   // Vatly-Client-Info: sdk=vatly-sdk-js/0.3.0-alpha.2; runtime=node/v25.9.0; os=darwin; arch=arm64; app=MyApp/1.2.3; framework=Next.js/14
    *
    * Pass `false` to omit the header entirely. If you need more named fields
    * (e.g. `region`, `cloud`), open an issue — we'll add them as constrained
@@ -98,7 +98,7 @@ export interface ResolvedConfig {
   idempotencyKeyGenerator: IdempotencyKeyGenerator | undefined;
 }
 
-export const SDK_VERSION = "0.3.0-alpha.1";
+export const SDK_VERSION = "0.3.0-alpha.2";
 
 function readEnvApiKey(): string | undefined {
   // `process` is undefined on some edge runtimes (Cloudflare Workers w/o nodejs_compat).

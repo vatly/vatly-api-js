@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.3.0-alpha.2
+
+### Fixed
+
+- Serialize explicit subscription cancellation `immediately` values as `1`/`0`,
+  matching the production API's boolean validation; omitted values remain omitted.
+
+### Added
+
+- Regression coverage for customer creation, webhook endpoints, subscriptions,
+  orders, and refunds (PR #10), plus packaged cancellation-query checks.
+- Explicit alpha stability notices: every alpha may include breaking changes.
+
+### Changed
+
+- Upgrade GitHub Actions to versions using the Node 24 action runtime while
+  retaining SDK compatibility checks on Node 20, 22, and 24.
+
 ## 0.3.0-alpha.1
 
 ### Added
