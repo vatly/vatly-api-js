@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.3.0-alpha.3
+
+### Fixed
+
+- Reject empty successful responses, unexpected 204 responses, and JSON `null`
+  for operations that require a resource or page. Errors include the HTTP status,
+  method, URL, and response body. Documented no-content operations still accept
+  empty success responses.
+- Preserve request method, URL, and cause in connection, timeout, and caller-abort
+  errors, including aborts during retry backoff.
+
 ## 0.3.0-alpha.2
 
 ### Fixed
