@@ -178,7 +178,7 @@ describe("production OpenAPI contract", () => {
       { body: page(null) },
     ]);
     expect(await client.subscriptions.cancel("sub_1", { immediately: true })).toBeUndefined();
-    expect(calls[0]!.url).toContain("immediately=true");
+    expect(calls[0]!.url).toContain("immediately=1");
     const result = [];
     for await (const item of client.oneOffProducts.listAll({ includeArchived: true, limit: 1 }))
       result.push(item.id);

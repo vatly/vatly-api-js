@@ -12,6 +12,19 @@ function makeClient(responses: Parameters<typeof makeFetchSequence>[0]) {
   return { client, calls };
 }
 
+describe("subscriptions.cancel", () => {
+  it.each([true, false, undefined])(
+    "uses the API's accepted query boolean for %s",
+    async (immediately) => {
+      const { client, calls } = makeClient([{ status: 204 }]);
+      await client.subscriptions.cancel("subscription_1", { immediately });
+      expect(new URL(calls[0]!.url).searchParams.get("immediately")).toBe(
+        immediately === undefined ? null : immediately ? "1" : "0",
+      );
+    },
+  );
+});
+
 describe("subscriptions.resume", () => {
   it("POSTs to /subscriptions/{id}/resume and returns the subscription", async () => {
     const { client, calls } = makeClient([

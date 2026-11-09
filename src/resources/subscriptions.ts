@@ -53,7 +53,10 @@ export class SubscriptionsResource extends BaseResource {
       {
         method: "DELETE",
         path: `/subscriptions/${encodeURIComponent(subscriptionId)}`,
-        query: { immediately: opts?.immediately },
+        // Laravel's boolean query validation accepts 1/0, not the strings true/false.
+        query: {
+          immediately: opts?.immediately === undefined ? undefined : Number(opts.immediately),
+        },
       },
       opts,
     );

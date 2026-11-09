@@ -50,7 +50,7 @@ async function main() {
     assert(calls[0].key);
     assert.deepEqual(JSON.parse(calls[0].body), { email: "ada@example.com" });
     assert.equal(await client.subscriptions.cancel("sub /?", { immediately: true }), undefined);
-    assert.equal(calls[2].url, "/v1/subscriptions/sub%20%2F%3F?immediately=true");
+    assert.equal(calls[2].url, "/v1/subscriptions/sub%20%2F%3F?immediately=1");
     const body = JSON.stringify({ eventName: "subscription.updated", reason: "renewed", object: { id: "sub_1" } });
     const t = Math.floor(Date.now() / 1000);
     const digest = createHmac("sha256", "test-signing-secret").update(t + "." + body).digest("hex");
