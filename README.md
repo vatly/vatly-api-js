@@ -4,10 +4,9 @@
 
 > **Alpha — under active development. Every alpha release may include breaking changes. Pin exact versions during alpha.**
 
-Server-side JavaScript / TypeScript SDK for [Vatly](https://vatly.com), the
-Merchant of Record for European software and digital products.
+Server-side JavaScript / TypeScript SDK for [Vatly](https://vatly.com), the European merchant of record for AI, software and digital products.
 
-**Current alpha: `0.3.0-alpha.2`.**
+**Current alpha: `0.3.0-alpha.3`.**
 npm scope: `@getvatly`;
 GitHub home: `vatly/vatly-api-js`.
 
@@ -17,7 +16,7 @@ GitHub home: `vatly/vatly-api-js`.
 - ESM + CommonJS, matching `.d.ts` / `.d.cts` declarations, no runtime dependencies.
 - Native `fetch`, `Headers`, `AbortController`, and Web Crypto. Node 20+;
   designed for Bun, Deno, Cloudflare Workers and Vercel Edge. Node is tested in CI;
-  edge runtimes have not yet been integration-tested.
+  test your application and storage adapters in your target edge runtime too.
 - Server-only: never expose a Vatly API key to a browser.
 
 ## Install
@@ -25,12 +24,12 @@ GitHub home: `vatly/vatly-api-js`.
 Pin the alpha version explicitly:
 
 ```bash
-npm install --save-exact @getvatly/sdk@0.3.0-alpha.2
-# or: pnpm add --save-exact @getvatly/sdk@0.3.0-alpha.2
+npm install --save-exact @getvatly/sdk@0.3.0-alpha.3
+# or: pnpm add --save-exact @getvatly/sdk@0.3.0-alpha.3
 ```
 
-Before publication, `pnpm install --frozen-lockfile && pnpm build && npm pack`
-creates an installable local tarball. No registry publishing is needed.
+To test local changes, `pnpm install --frozen-lockfile && pnpm build && npm pack`
+creates an installable tarball without publishing to the registry.
 
 ## Quickstart
 
@@ -100,9 +99,11 @@ All HTTP errors extend `VatlyError` and expose `status`, `body`, `details`,
 | Other | `VatlyApiError` |
 
 Network failures and caller aborts raise `VatlyConnectionError`; timeouts raise
-`VatlyTimeoutError`. Malformed nonempty JSON success responses raise
-`VatlyApiError` rather than pretending to be typed resources. JSON resource
-responses are not runtime schema-validated.
+`VatlyTimeoutError`. Both include the request method, URL, and cause.
+Malformed JSON, empty bodies, unexpected 204 responses, and JSON `null` raise
+`VatlyApiError` when a resource or page is required. Documented no-content
+operations still accept empty success responses. Resource fields are not
+runtime schema-validated.
 
 ```ts
 import { VatlyConflictError, VatlyValidationError } from "@getvatly/sdk";
@@ -234,8 +235,9 @@ An npm maintainer must approve each staged package with 2FA before it goes live
 and `latest` moves to that version. No separate dist-tag command is needed.
 Publishing requires a separately authorized release and npm access to `@getvatly`.
 The public source repository for provenance is `vatly/vatly-api-js`.
-Live API testing requires account-specific credentials/resources and has not
-been performed in this change. No fluent wrapper or PHP port is included.
+The automated suite uses local fixtures rather than authenticated Vatly requests.
+For customer bindings, local persistence, and fluent billing flows, use the separate
+[@getvatly/fluent package](https://github.com/vatly/vatly-fluent-js).
 
 ### Publishing
 
