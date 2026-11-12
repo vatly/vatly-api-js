@@ -112,7 +112,7 @@ client.oneOffProducts.create({ ...product, basePrice: { value: "12.34", currency
   run(process.execPath, [tsc, ...args, "--module", "NodeNext", "--moduleResolution", "NodeNext", "consumer.mts", "consumer.cts", ...examples.map(example => `${example}.mts`)]);
   run(process.execPath, [tsc, ...args, "--module", "ESNext", "--moduleResolution", "Bundler", "consumer.mts"]);
   const installed = JSON.parse(readFileSync(join(temp, "node_modules/@getvatly/sdk/package.json"), "utf8"));
-  assert.equal(installed.publishConfig.tag, "alpha");
+  assert.equal(installed.publishConfig.tag, "latest");
   console.log("Packed @getvatly/sdk: ESM/CJS HTTP + webhook smoke tests, NodeNext/Bundler typings, and examples passed.");
 } finally {
   rmSync(temp, { recursive: true, force: true });

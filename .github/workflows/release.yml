@@ -4,8 +4,7 @@ name: Release
 # Tag the release `vX.Y.Z` matching package.json's version.
 #
 # Configure npm trusted publishing for vatly/vatly-api-js and release.yml.
-# NPM_TOKEN is an optional short-lived stage-only token for the first publication,
-# before the package exists on npm. Remove it after configuring trusted publishing.
+# Stage-only OIDC access is sufficient; approval applies the staged latest tag.
 
 on:
   release:
@@ -60,11 +59,6 @@ jobs:
       - name: Build and test package
         run: pnpm build && pnpm test:package
 
-      # Explicitly route prereleases to alpha, never npm's latest dist-tag.
+      # Approval publishes the version and moves latest, including alpha versions.
       - name: Stage for maintainer approval
-        run: |
-          VERSION="$(node -p "require('./package.json').version")"
-          if [[ "$VERSION" == *-* ]]; then DIST_TAG=alpha; else DIST_TAG=latest; fi
-          npm stage publish --provenance --access public --tag "$DIST_TAG"
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm stage publish --provenance --access public --tag latest
