@@ -4,7 +4,7 @@
 
 > **Alpha — under active development. Every alpha release may include breaking changes. Pin exact versions during alpha.**
 
-Server-side JavaScript / TypeScript SDK for [Vatly](https://vatly.com), the European merchant of record for AI, software and digital products.
+Server-side JavaScript / TypeScript SDK for [Vatly](https://vatly.com), the European Merchant of Record for AI, software and digital products.
 
 **Current alpha: `0.3.0-alpha.3`.**
 npm scope: `@getvatly`;
