@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import { makeTestClient } from "../test-utils.js";
+import type { OrderLine } from "../types.js";
 
 const page = (path: string, data: unknown[], next: string | null = null) => ({
   data,
@@ -30,6 +31,54 @@ describe("orders", () => {
     await client.orders.get("order 1");
 
     expect(calls[0]!.url).toContain("/orders/order%201");
+  });
+
+  it("exposes lines[].relatedResources.subscriptionId, nullable and optional", async () => {
+    // Optional for older payloads; null on historical/unrelated lines; an
+    // unresolved signup line carries { subscriptionId: null }. Checked by tsc.
+    expectTypeOf<OrderLine["relatedResources"]>().toEqualTypeOf<
+      { subscriptionId: string | null } | null | undefined
+    >();
+
+    const line = (id: string, extra: Partial<OrderLine>) => ({ id, ...extra });
+    const lines = [
+      line("signup", {
+        productType: "subscription_plan",
+        productId: "subscription_plan_1",
+        relatedResources: { subscriptionId: "subscription_1" },
+      }),
+      line("renewal", {
+        productType: "subscription",
+        productId: "subscription_1",
+        relatedResources: { subscriptionId: "subscription_1" },
+      }),
+      line("unresolved", {
+        productType: "subscription_plan",
+        productId: "subscription_plan_1",
+        relatedResources: { subscriptionId: null },
+      }),
+      line("one-off", { productType: "one_off_product", relatedResources: null }),
+      line("older", {}),
+    ];
+    const { client } = makeTestClient([{ status: 200, body: { id: "order_1", lines } }]);
+
+    const order = await client.orders.get("order_1");
+
+    expect(order.lines.map((l) => l.relatedResources)).toEqual([
+      { subscriptionId: "subscription_1" },
+      { subscriptionId: "subscription_1" },
+      { subscriptionId: null },
+      null,
+      undefined,
+    ]);
+    expect(order.lines.map((l) => l.relatedResources?.subscriptionId)).toEqual([
+      "subscription_1",
+      "subscription_1",
+      null,
+      undefined,
+      undefined,
+    ]);
+    expect(order.lines[0]!.productId).toBe("subscription_plan_1");
   });
 
   it("createInvoiceUpdateLink POSTs to the link endpoint", async () => {
