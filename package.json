@@ -1,6 +1,6 @@
 {
   "name": "@getvatly/sdk",
-  "version": "0.3.0-alpha.3",
+  "version": "0.3.0-alpha.4",
   "description": "Official TypeScript SDK for Vatly, the European Merchant of Record for AI, software and digital products",
   "license": "MIT",
   "repository": {

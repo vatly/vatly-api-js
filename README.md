@@ -6,7 +6,7 @@
 
 Server-side JavaScript / TypeScript SDK for [Vatly](https://vatly.com), the European Merchant of Record for AI, software and digital products.
 
-**Current alpha: `0.3.0-alpha.3`.**
+**Current alpha: `0.3.0-alpha.4`.**
 npm scope: `@getvatly`;
 GitHub home: `vatly/vatly-api-js`.
 
@@ -24,8 +24,8 @@ GitHub home: `vatly/vatly-api-js`.
 Pin the alpha version explicitly:
 
 ```bash
-npm install --save-exact @getvatly/sdk@0.3.0-alpha.3
-# or: pnpm add --save-exact @getvatly/sdk@0.3.0-alpha.3
+npm install --save-exact @getvatly/sdk@0.3.0-alpha.4
+# or: pnpm add --save-exact @getvatly/sdk@0.3.0-alpha.4
 ```
 
 To test local changes, `pnpm install --frozen-lockfile && pnpm build && npm pack`

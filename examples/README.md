@@ -13,7 +13,7 @@ in directly.
 
 ## Running `basic-crud.ts`
 
-From a project with `@getvatly/sdk@0.3.0-alpha.3` installed:
+From a project with `@getvatly/sdk@0.3.0-alpha.4` installed:
 
 ```bash
 VATLY_API_KEY=test_xxxxxxxxxxxxxxxxxx npx tsx examples/basic-crud.ts
