@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `OrderLine.relatedResources.subscriptionId`: the subscription a signup, renewal
+  or immediate-update order line belongs to. `relatedResources` is `null` on
+  historical and unrelated lines and may be absent from older payloads;
+  `subscriptionId` is `null` while a signup's subscription is not yet available.
+  `productType`/`productId` keep their meaning. An ID does not prove activation
+  or entitlement.
+
+### Changed
+
+- Refresh the OpenAPI snapshot from docs.vatly.com (SHA-256 `5e648169…`, vatly-docs
+  `66c8205`). The only contract change is the additive order-line field above.
+
 ## 0.3.0-alpha.3
 
 ### Fixed
