@@ -2,11 +2,10 @@
 
 # @getvatly/sdk
 
-> **Alpha — under active development. Every alpha release may include breaking changes. Pin exact versions during alpha.**
+> **Alpha — under active development. Every alpha release may include breaking changes. Lock the version you install and review the release notes before upgrading.**
 
 Server-side JavaScript / TypeScript SDK for [Vatly](https://vatly.com), the European Merchant of Record for AI, software and digital products.
 
-**Current alpha: `0.3.0-alpha.4`.**
 npm scope: `@getvatly`;
 GitHub home: `vatly/vatly-api-js`.
 
@@ -21,11 +20,11 @@ GitHub home: `vatly/vatly-api-js`.
 
 ## Install
 
-Pin the alpha version explicitly:
+Install the latest alpha; `--save-exact` pins the installed version in `package.json`:
 
 ```bash
-npm install --save-exact @getvatly/sdk@0.3.0-alpha.4
-# or: pnpm add --save-exact @getvatly/sdk@0.3.0-alpha.4
+npm install --save-exact @getvatly/sdk
+# or: pnpm add --save-exact @getvatly/sdk
 ```
 
 To test local changes, `pnpm install --frozen-lockfile && pnpm build && npm pack`
