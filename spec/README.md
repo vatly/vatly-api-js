@@ -1,12 +1,12 @@
 # Production spec provenance
 
-- Retrieved from <https://docs.vatly.com/openapi.yaml> on 2026-11-13.
+- Retrieved from <https://docs.vatly.com/openapi.yaml> on 2026-11-21.
 - Byte-identical to `vatly/vatly-docs/public/openapi.yaml` at upstream commit
-  [66c8205ea886e4cb48e8e3b2e988de3839c6d4d8](https://github.com/vatly/vatly-docs/commit/66c8205ea886e4cb48e8e3b2e988de3839c6d4d8)
-  (vatly-docs PR #89), which serves the production spec of Vatlify Release 2.
+  [d5c09d94a52c4e7d884c2817b4b7834597294cb0](https://github.com/vatly/vatly-docs/commit/d5c09d94a52c4e7d884c2817b4b7834597294cb0)
+  ("Document month and year as the only subscription plan intervals").
 - OpenAPI 3.1.0, API version 1.0. The upstream `x-generated-at` says 2026-05-28;
   it is not the retrieval date and is not treated as a freshness guarantee.
-- SHA-256: `5e648169e101edc8b3e088dc0e28d0f0a293e8a0ed057014c7336057d986def9`.
+- SHA-256: `be578c73c71c234262b6f5f21bd1f01e209fcc64464a1e81d7fd0675eb3c273c`.
 
 `openapi.yaml` here and at the repository root are verbatim copies. No contract
 patches or version downgrades are applied. `pnpm gen` refreshes both and generates

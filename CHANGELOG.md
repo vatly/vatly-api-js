@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Subscription plan creation and updates accept only monthly (`interval: "month"`,
+  `intervalCount: 1`) or yearly (`interval: "year"`, `intervalCount: 1`) billing,
+  in live and test mode; the API returns `422` for anything else. On update, send
+  `interval` and `intervalCount` together. `CreateSubscriptionPlanRequest` and
+  `UpdateSubscriptionPlanRequest` are narrowed to match. Response types still
+  accept `day`, `week`, and higher counts, which existing plans may return.
+- Refresh the OpenAPI snapshot from docs.vatly.com (SHA-256 `be578c73…`, vatly-docs
+  `d5c09d9`). The only
+  contract change is the subscription plan interval rule above.
+
 ## 0.3.0-alpha.4
 
 ### Added

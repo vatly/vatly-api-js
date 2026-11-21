@@ -392,10 +392,9 @@ export interface paths {
          *     Constraints:
          *     - `productType` must be `saas` (e-books are one-off purchases and cannot
          *       be sold on a recurring basis).
-         *     - The `day` interval is sandbox-only; live plans support `week`, `month`,
-         *       and `year`.
-         *     - `intervalCount` is bounded per unit: up to 365 days, 52 weeks, or 12
-         *       months. `year` always bills once per year (`intervalCount` is ignored).
+         *     - The plan must bill monthly (`interval: month`, `intervalCount: 1`) or
+         *       yearly (`interval: year`, `intervalCount: 1`), in both live and test
+         *       mode. Any other combination returns `422`.
          */
         post: operations["createSubscriptionPlan"];
         delete?: never;
@@ -435,6 +434,12 @@ export interface paths {
          *     return `409`. Changing the interval on a plan that has ever been used by a
          *     subscription — active or not — also returns `409`. The price stays
          *     changeable.
+         *
+         *     To change the billing interval, send `interval` and `intervalCount`
+         *     together, set to monthly (`month`, `1`) or yearly (`year`, `1`). Anything
+         *     else returns `422`, in both live and test mode. A plan that already bills
+         *     on another interval keeps working, and its other fields can still be
+         *     updated without sending the interval.
          */
         patch: operations["updateSubscriptionPlan"];
         trace?: never;
@@ -2671,17 +2676,19 @@ export interface components {
             taxBehavior: "exclusive" | "inclusive";
             /**
              * @description Billing interval unit:
-             *     - `day` - Daily billing
-             *     - `week` - Weekly billing
              *     - `month` - Monthly billing
              *     - `year` - Yearly billing
+             *
+             *     New plans are always `month` or `year`. A plan created earlier on
+             *     `day` or `week` keeps returning that value and keeps working.
              * @example month
              * @enum {string}
              */
             interval: "day" | "week" | "month" | "year";
             /**
-             * @description Number of interval units between billing cycles.
-             *     For example, `interval: month` with `intervalCount: 3` bills every 3 months.
+             * @description Number of interval units between billing cycles. Always `1` for new
+             *     plans. A plan created earlier may return a higher value, such as
+             *     `interval: month` with `intervalCount: 3` for billing every 3 months.
              * @example 1
              */
             intervalCount: number;
@@ -2720,14 +2727,14 @@ export interface components {
              *     `null` when there is no pending update. Only the fields that actually
              *     differ from the live plan are present.
              * @example {
-             *       "interval": "week",
+             *       "interval": "year",
              *       "intervalCount": 1
              *     }
              */
             pendingUpdates?: {
                 /** @example Pro Weekly */
                 name?: string;
-                /** @example Billed weekly */
+                /** @example Billed yearly */
                 description?: string;
                 basePrice?: components["schemas"]["Money"];
                 /** @enum {string} */
@@ -2790,19 +2797,19 @@ export interface components {
              */
             taxBehavior?: "exclusive" | "inclusive";
             /**
-             * @description Billing interval unit. `day` is sandbox-only (test mode); live plans
-             *     support `week`, `month`, and `year`.
+             * @description Billing interval unit, in both live and test mode. Any other value
+             *     returns `422`.
              * @example month
              * @enum {string}
              */
-            interval: "day" | "week" | "month" | "year";
+            interval: "month" | "year";
             /**
-             * @description Number of interval units between billing cycles. Bounded per unit:
-             *     up to 365 days, 52 weeks, or 12 months. For `year`, billing is always
-             *     annual and this value is ignored.
+             * @description Number of interval units between billing cycles. Must be `1`; any
+             *     other value returns `422`.
              * @example 1
+             * @enum {integer}
              */
-            intervalCount: number;
+            intervalCount: 1;
         };
         /**
          * @description An order represents a completed purchase.
@@ -3964,7 +3971,9 @@ export interface components {
          *     mode it is approved automatically).
          *
          *     The interval cannot be changed once the plan has ever been used by a
-         *     subscription, active or not. The price stays changeable.
+         *     subscription, active or not. The price stays changeable. To change the
+         *     interval, send `interval` and `intervalCount` together, set to `month`
+         *     or `year` with `intervalCount: 1`; anything else returns `422`.
          */
         UpdateSubscriptionPlanRequest: {
             /**
@@ -3974,7 +3983,7 @@ export interface components {
             name?: string;
             /**
              * @description New description of the plan.
-             * @example Billed weekly
+             * @example Billed yearly
              */
             description?: string;
             /** @description New price per billing interval, in EUR. */
@@ -3985,15 +3994,17 @@ export interface components {
              */
             productType?: "saas";
             /**
-             * @example week
+             * @description Must be sent together with `intervalCount`.
+             * @example year
              * @enum {string}
              */
-            interval?: "day" | "week" | "month" | "year";
+            interval?: "month" | "year";
             /**
-             * @description Required when `interval` is provided.
+             * @description Must be `1`, sent together with `interval`.
              * @example 1
+             * @enum {integer}
              */
-            intervalCount?: number;
+            intervalCount?: 1;
         };
         /** @description Simplified tax rate information */
         TaxSummaryRate: {
@@ -6221,12 +6232,12 @@ export interface operations {
             content: {
                 /**
                  * @example {
-                 *       "name": "Pro Weekly",
+                 *       "name": "Pro Yearly",
                  *       "basePrice": {
-                 *         "value": "9.00",
+                 *         "value": "290.00",
                  *         "currency": "EUR"
                  *       },
-                 *       "interval": "week",
+                 *       "interval": "year",
                  *       "intervalCount": 1
                  *     }
                  */
@@ -6259,12 +6270,12 @@ export interface operations {
                      *       "status": "active",
                      *       "archivedAt": null,
                      *       "pendingUpdates": {
-                     *         "name": "Pro Weekly",
+                     *         "name": "Pro Yearly",
                      *         "basePrice": {
-                     *           "value": "9.00",
+                     *           "value": "290.00",
                      *           "currency": "EUR"
                      *         },
-                     *         "interval": "week",
+                     *         "interval": "year",
                      *         "intervalCount": 1
                      *       },
                      *       "updateStatus": "pending",

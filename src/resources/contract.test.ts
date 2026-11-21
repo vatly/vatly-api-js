@@ -26,7 +26,7 @@ const product = {
   basePrice: { value: "12.34", currency: "EUR" as const },
   productType: "saas" as const,
 };
-const plan = { ...product, interval: "month" as const, intervalCount: 3 };
+const plan = { ...product, interval: "year" as const, intervalCount: 1 as const };
 const checkout = {
   products: [{ id: "product_1", quantity: 3 }],
   redirectUrlSuccess: "https://example.com/ok",
@@ -76,8 +76,9 @@ const cases: Record<string, Case> = {
   createSubscriptionPlan: [(c) => c.subscriptionPlans.create(plan), plan],
   getSubscriptionPlan: [(c) => c.subscriptionPlans.get(ids.subscriptionPlanId)],
   updateSubscriptionPlan: [
-    (c) => c.subscriptionPlans.update(ids.subscriptionPlanId, { intervalCount: 2 }),
-    { intervalCount: 2 },
+    (c) =>
+      c.subscriptionPlans.update(ids.subscriptionPlanId, { interval: "month", intervalCount: 1 }),
+    { interval: "month", intervalCount: 1 },
   ],
   archiveSubscriptionPlan: [(c) => c.subscriptionPlans.archive(ids.subscriptionPlanId)],
   unarchiveSubscriptionPlan: [(c) => c.subscriptionPlans.unarchive(ids.subscriptionPlanId)],
