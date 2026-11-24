@@ -16,7 +16,21 @@ export class CheckoutsResource extends BaseResource {
     return this.paginateAll<Checkout>((p, o) => this.list(p, o), params, opts);
   }
 
+  /**
+   * POST /checkouts
+   * `products[].trialDays` must be at least 1 and is only allowed on subscription
+   * plans; omit it or pass `null` for no trial. A value below 1 is rejected with a
+   * `RangeError` before any request is sent.
+   */
   create(body: CreateCheckoutRequest, opts?: RequestOptions): Promise<Checkout> {
+    const invalid = body.products.find((p) => typeof p.trialDays === "number" && p.trialDays < 1);
+    if (invalid) {
+      return Promise.reject(
+        new RangeError(
+          `Vatly: products[].trialDays must be at least 1 (got ${invalid.trialDays}). Omit it or pass null for no trial.`,
+        ),
+      );
+    }
     return this.request<Checkout>({ method: "POST", path: "/checkouts", body }, opts);
   }
 

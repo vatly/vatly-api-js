@@ -392,9 +392,8 @@ export interface paths {
          *     Constraints:
          *     - `productType` must be `saas` (e-books are one-off purchases and cannot
          *       be sold on a recurring basis).
-         *     - The plan must bill monthly (`interval: month`, `intervalCount: 1`) or
-         *       yearly (`interval: year`, `intervalCount: 1`), in both live and test
-         *       mode. Any other combination returns `422`.
+         *     - `interval` must be `month` or `year`, and `intervalCount` must be `1`,
+         *       in live and test mode alike. Any other value returns `422`.
          */
         post: operations["createSubscriptionPlan"];
         delete?: never;
@@ -435,11 +434,9 @@ export interface paths {
          *     subscription — active or not — also returns `409`. The price stays
          *     changeable.
          *
-         *     To change the billing interval, send `interval` and `intervalCount`
-         *     together, set to monthly (`month`, `1`) or yearly (`year`, `1`). Anything
-         *     else returns `422`, in both live and test mode. A plan that already bills
-         *     on another interval keeps working, and its other fields can still be
-         *     updated without sending the interval.
+         *     A new `interval` must be `month` or `year` with `intervalCount: 1`, sent
+         *     together, in live and test mode alike; any other value returns `422`. A
+         *     plan that already bills on another interval keeps it.
          */
         patch: operations["updateSubscriptionPlan"];
         trace?: never;
@@ -582,6 +579,8 @@ export interface paths {
          * @description Creates a partial refund for specific items in an order.
          *
          *     **Requirements:**
+         *     - Order must be a sale: a checkout or subscription order. Payment-method
+         *       authorization requests and billing-details verification charges cannot be refunded.
          *     - Order must have `paid` status
          *     - Order's payment provider must support refunds
          *     - Refund amount per item cannot exceed remaining refundable amount
@@ -612,6 +611,8 @@ export interface paths {
          * @description Creates a full refund for an order, refunding all items.
          *
          *     **Requirements:**
+         *     - Order must be a sale: a checkout or subscription order. Payment-method
+         *       authorization requests and billing-details verification charges cannot be refunded.
          *     - Order must have `paid` status
          *     - Order's payment provider must support refunds
          *     - Order must not be already fully refunded
@@ -2261,7 +2262,7 @@ export interface components {
              * @example de
              * @enum {string|null}
              */
-            locale: "en" | "de" | "fr" | "nl" | "es" | "it" | "pt" | "pl" | null;
+            locale: "en" | "de" | "fr" | "nl" | "es" | "it" | "pt" | "pl" | "cs" | "ca" | "da" | "el" | "fi" | "hu" | "is" | "lt" | "lv" | "nb" | "sk" | "sl" | "sv" | "tr" | null;
             /**
              * @description Current status of the checkout:
              *     - `created` - Checkout is active and awaiting payment
@@ -2322,7 +2323,9 @@ export interface components {
             price?: components["schemas"]["EurMoney"] | null;
             /**
              * @description Trial period in days for subscription plans.
-             *     Only applicable when `id` references a subscription plan.
+             *     Only allowed when `id` references a subscription plan; on any other
+             *     product a value returns a `422`.
+             *     Omit it or send `null` for no trial.
              * @example 14
              */
             trialDays?: number | null;
@@ -2378,7 +2381,9 @@ export interface components {
              *     The language also carries through to the payment provider's own hosted
              *     page, in whatever format that provider expects.
              *
-             *     Supported languages: `en`, `de`, `fr`, `nl`, `es`, `it`, `pt`, `pl`.
+             *     Supported languages: `en`, `de`, `fr`, `nl`, `es`, `it`, `pt`, `pl`,
+             *     `cs`, `ca`, `da`, `el`, `fi`, `hu`, `is`, `lt`, `lv`, `nb`, `sk`, `sl`,
+             *     `sv`, `tr`. Norwegian is served as `nb`; `no` and `nn` fold to it.
              *     Anything else is a `422` naming the supported set.
              *
              *     Omit it (or send `null`) to detect the language from the shopper's
@@ -2527,13 +2532,18 @@ export interface components {
              *     - `saas` — software supplied as a service (hosted, licensed or otherwise
              *       delivered online)
              *     - `ebook` — an electronic publication supplied as a download or stream
+             *     - `digital_download` — files the customer keeps that aren't a book or
+             *       software, such as photos, fonts, templates or music
+             *     - `online_course` — recorded lessons the customer follows at their own pace
+             *     - `audiobook` — a book to listen to, streamed or downloaded
              *
              *     Set when the product is created. Subscription plans accept `saas` only;
-             *     an e-book is a one-time purchase, so sell it as a one-off product.
+             *     e-books, digital downloads, online courses and audiobooks are one-time
+             *     purchases, so sell them as one-off products.
              * @example saas
              * @enum {string}
              */
-            productType: "saas" | "ebook";
+            productType: "saas" | "ebook" | "digital_download" | "online_course" | "audiobook";
             /**
              * @description Current status of the product:
              *     - `active` - Product is active and can be purchased
@@ -2570,7 +2580,7 @@ export interface components {
                 description?: string;
                 basePrice?: components["schemas"]["Money"];
                 /** @enum {string} */
-                productType?: "saas" | "ebook";
+                productType?: "saas" | "ebook" | "digital_download" | "online_course" | "audiobook";
             } | null;
             /**
              * @description Lifecycle of a pending update, or `null` when there is none:
@@ -2611,13 +2621,18 @@ export interface components {
              *     - `saas` — software supplied as a service (hosted, licensed or otherwise
              *       delivered online)
              *     - `ebook` — an electronic publication supplied as a download or stream
+             *     - `digital_download` — files the customer keeps that aren't a book or
+             *       software, such as photos, fonts, templates or music
+             *     - `online_course` — recorded lessons the customer follows at their own pace
+             *     - `audiobook` — a book to listen to, streamed or downloaded
              *
              *     Set when the product is created. Subscription plans accept `saas` only;
-             *     an e-book is a one-time purchase, so sell it as a one-off product.
+             *     e-books, digital downloads, online courses and audiobooks are one-time
+             *     purchases, so sell them as one-off products.
              * @example saas
              * @enum {string}
              */
-            productType: "saas" | "ebook";
+            productType: "saas" | "ebook" | "digital_download" | "online_course" | "audiobook";
             /**
              * @description Whether `basePrice` is tax-exclusive (B2B convention) or tax-inclusive
              *     (B2C convention). Optional; defaults to `exclusive`. Immutable after
@@ -2676,19 +2691,22 @@ export interface components {
             taxBehavior: "exclusive" | "inclusive";
             /**
              * @description Billing interval unit:
+             *     - `day` - Daily billing
+             *     - `week` - Weekly billing
              *     - `month` - Monthly billing
              *     - `year` - Yearly billing
              *
-             *     New plans are always `month` or `year`. A plan created earlier on
-             *     `day` or `week` keeps returning that value and keeps working.
+             *     New plans and interval changes accept only `month` or `year` with
+             *     `intervalCount: 1`. `day` and `week` appear only on plans created
+             *     before that restriction.
              * @example month
              * @enum {string}
              */
             interval: "day" | "week" | "month" | "year";
             /**
              * @description Number of interval units between billing cycles. Always `1` for new
-             *     plans. A plan created earlier may return a higher value, such as
-             *     `interval: month` with `intervalCount: 3` for billing every 3 months.
+             *     plans and interval changes; plans created before that restriction may
+             *     carry another value.
              * @example 1
              */
             intervalCount: number;
@@ -2732,7 +2750,7 @@ export interface components {
              *     }
              */
             pendingUpdates?: {
-                /** @example Pro Weekly */
+                /** @example Pro Yearly */
                 name?: string;
                 /** @example Billed yearly */
                 description?: string;
@@ -2797,15 +2815,14 @@ export interface components {
              */
             taxBehavior?: "exclusive" | "inclusive";
             /**
-             * @description Billing interval unit, in both live and test mode. Any other value
-             *     returns `422`.
+             * @description Billing interval unit: `month` or `year`, in live and test mode alike.
              * @example month
              * @enum {string}
              */
             interval: "month" | "year";
             /**
-             * @description Number of interval units between billing cycles. Must be `1`; any
-             *     other value returns `422`.
+             * @description Number of interval units between billing cycles. Must be `1`: a plan
+             *     bills every month or every year.
              * @example 1
              * @enum {integer}
              */
@@ -2879,7 +2896,13 @@ export interface components {
             subtotal: components["schemas"]["Money"];
             /** @description Amount of the captured payment returned to the customer, before taxes, via refund or chargeback (settled) */
             reversedSubtotal: components["schemas"]["Money"];
-            /** @description Remaining amount that can still be refunded, before taxes. */
+            /**
+             * @description Remaining amount that can still be refunded, before taxes. Always zero
+             *     for an order that is not a sale (any order type other than
+             *     `checkout_order` and `mandated_order`, such as a payment-method
+             *     authorization or a verification charge), because such orders cannot
+             *     be refunded.
+             */
             refundableSubtotal: components["schemas"]["Money"];
             /** @description Tax breakdown by rate */
             taxSummary: components["schemas"]["TaxSummaryItem"][];
@@ -3022,6 +3045,12 @@ export interface components {
              * @example order_Vr8kQdFhSrG4Y3DnfsdqH
              */
             orderId: string | null;
+            /**
+             * @description The `metadata` sent when the refund was created. Always present;
+             *     `null` when none was sent, including for refunds created before
+             *     metadata was stored.
+             */
+            metadata: components["schemas"]["Metadata"];
             /**
              * @description ID of the customer receiving the refund
              * @example customer_Lp3mNvBxKw7RjTgYcZaE
@@ -3954,13 +3983,18 @@ export interface components {
              *     - `saas` — software supplied as a service (hosted, licensed or otherwise
              *       delivered online)
              *     - `ebook` — an electronic publication supplied as a download or stream
+             *     - `digital_download` — files the customer keeps that aren't a book or
+             *       software, such as photos, fonts, templates or music
+             *     - `online_course` — recorded lessons the customer follows at their own pace
+             *     - `audiobook` — a book to listen to, streamed or downloaded
              *
              *     Set when the product is created. Subscription plans accept `saas` only;
-             *     an e-book is a one-time purchase, so sell it as a one-off product.
+             *     e-books, digital downloads, online courses and audiobooks are one-time
+             *     purchases, so sell them as one-off products.
              * @example saas
              * @enum {string}
              */
-            productType?: "saas" | "ebook";
+            productType?: "saas" | "ebook" | "digital_download" | "online_course" | "audiobook";
         };
         /**
          * @description Request body for submitting an update to a live subscription plan. Each
@@ -3971,14 +4005,12 @@ export interface components {
          *     mode it is approved automatically).
          *
          *     The interval cannot be changed once the plan has ever been used by a
-         *     subscription, active or not. The price stays changeable. To change the
-         *     interval, send `interval` and `intervalCount` together, set to `month`
-         *     or `year` with `intervalCount: 1`; anything else returns `422`.
+         *     subscription, active or not. The price stays changeable.
          */
         UpdateSubscriptionPlanRequest: {
             /**
              * @description New display name of the plan.
-             * @example Pro Weekly
+             * @example Pro Yearly
              */
             name?: string;
             /**
@@ -3994,13 +4026,14 @@ export interface components {
              */
             productType?: "saas";
             /**
-             * @description Must be sent together with `intervalCount`.
+             * @description New billing interval unit: `month` or `year`, in live and test mode
+             *     alike. Required when `intervalCount` is provided.
              * @example year
              * @enum {string}
              */
             interval?: "month" | "year";
             /**
-             * @description Must be `1`, sent together with `interval`.
+             * @description Must be `1`. Required when `interval` is provided.
              * @example 1
              * @enum {integer}
              */
@@ -6234,7 +6267,7 @@ export interface operations {
                  * @example {
                  *       "name": "Pro Yearly",
                  *       "basePrice": {
-                 *         "value": "290.00",
+                 *         "value": "9.00",
                  *         "currency": "EUR"
                  *       },
                  *       "interval": "year",
@@ -6272,7 +6305,7 @@ export interface operations {
                      *       "pendingUpdates": {
                      *         "name": "Pro Yearly",
                      *         "basePrice": {
-                     *           "value": "290.00",
+                     *           "value": "9.00",
                      *           "currency": "EUR"
                      *         },
                      *         "interval": "year",
@@ -6834,6 +6867,7 @@ export interface operations {
                      *           "id": "refund_Bm7xNvPwKr3YjTgHcZaE",
                      *           "resource": "refund",
                      *           "orderId": null,
+                     *           "metadata": null,
                      *           "customerId": "customer_Wt5mNvBxKw7YcZaEjLhR",
                      *           "testmode": false,
                      *           "createdAt": "2024-01-20T14:00:00Z",
@@ -6988,6 +7022,9 @@ export interface operations {
                      *       "id": "refund_Mn6xBtPvKw2RjTgYcZaE",
                      *       "resource": "refund",
                      *       "orderId": null,
+                     *       "metadata": {
+                     *         "ticketId": "SUPPORT-12345"
+                     *       },
                      *       "customerId": "customer_Lp3mNvBxKw7RjTgYcZaE",
                      *       "testmode": false,
                      *       "createdAt": "2024-01-15T10:30:00Z",
@@ -7070,6 +7107,11 @@ export interface operations {
             409: components["responses"]["Conflict"];
             /**
              * @description Validation failed. Common errors:
+             *     - Order is not a sale. Uses the standard error shape, and `details.orderType`
+             *       names the order's type, informational only. Possible values: every order
+             *       type except `checkout_order` and `mandated_order`, for example `auth_request`
+             *       (payment-method authorization) or `update_details_order` (billing-details
+             *       verification charge).
              *     - Order is not in `paid` status
              *     - Order's payment provider does not support refunds
              *     - Refund amount exceeds remaining refundable amount
@@ -7079,7 +7121,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError"];
+                    "application/json": components["schemas"]["ValidationError"] | components["schemas"]["Error"];
                 };
             };
             default: components["responses"]["UnexpectedError"];
@@ -7144,6 +7186,9 @@ export interface operations {
                      *       "id": "refund_Rk5pQrSvWm8NjLhYbUcP",
                      *       "resource": "refund",
                      *       "orderId": null,
+                     *       "metadata": {
+                     *         "reason": "Customer requested cancellation"
+                     *       },
                      *       "customerId": "customer_Wt5mNvBxKw7YcZaEjLhR",
                      *       "testmode": false,
                      *       "createdAt": "2024-01-21T09:00:00Z",
@@ -7224,7 +7269,25 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
-            422: components["responses"]["ValidationFailed"];
+            /**
+             * @description Validation failed. Common errors:
+             *     - Order is not a sale. Uses the standard error shape, and `details.orderType`
+             *       names the order's type, informational only. Possible values: every order
+             *       type except `checkout_order` and `mandated_order`, for example `auth_request`
+             *       (payment-method authorization) or `update_details_order` (billing-details
+             *       verification charge).
+             *     - Order is not in `paid` status
+             *     - Order's payment provider does not support refunds
+             *     - Order is already fully refunded
+             */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError"] | components["schemas"]["Error"];
+                };
+            };
             default: components["responses"]["UnexpectedError"];
         };
     };
@@ -7259,6 +7322,7 @@ export interface operations {
                      *       "id": "refund_Xk9pQrSvWm4NjLhYbUcP",
                      *       "resource": "refund",
                      *       "orderId": "order_Bm7xNvPwKr3YjTgHcZaE",
+                     *       "metadata": null,
                      *       "customerId": "customer_Wt5mNvBxKw7YcZaEjLhR",
                      *       "testmode": false,
                      *       "createdAt": "2024-01-20T14:00:00Z",
@@ -7686,6 +7750,7 @@ export interface operations {
                      *           "id": "refund_Xk9pQrSvWm4NjLhYbUcP",
                      *           "resource": "refund",
                      *           "orderId": "order_Bm7xNvPwKr3YjTgHcZaE",
+                     *           "metadata": null,
                      *           "customerId": "customer_Wt5mNvBxKw7YcZaEjLhR",
                      *           "testmode": false,
                      *           "createdAt": "2024-01-20T14:00:00Z",
@@ -7819,6 +7884,7 @@ export interface operations {
                      *       "id": "refund_Xk9pQrSvWm4NjLhYbUcP",
                      *       "resource": "refund",
                      *       "orderId": "order_Bm7xNvPwKr3YjTgHcZaE",
+                     *       "metadata": null,
                      *       "customerId": "customer_Wt5mNvBxKw7YcZaEjLhR",
                      *       "testmode": false,
                      *       "createdAt": "2024-01-20T14:00:00Z",

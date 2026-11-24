@@ -41,6 +41,25 @@ describe("checkouts", () => {
     expect(checkout.id).toBe("checkout_1");
   });
 
+  it("create sends trialDays of 1 or more and null, but rejects 0 without a request", async () => {
+    const { client, calls } = makeTestClient([{ status: 201, body: { id: "checkout_1" } }]);
+    const body = (trialDays: number | null) => ({
+      redirectUrlSuccess: "https://x.example/success",
+      redirectUrlCanceled: "https://x.example/cancel",
+      products: [
+        { id: "one_off_product_1", price: null, trialDays: null },
+        { id: "subscription_plan_1", trialDays },
+      ],
+    });
+
+    await expect(client.checkouts.create(body(0))).rejects.toThrow(RangeError);
+    await expect(client.checkouts.create(body(-3))).rejects.toThrow(/at least 1/);
+    expect(calls).toHaveLength(0);
+
+    await client.checkouts.create(body(1));
+    expect(JSON.parse(calls[0]!.body!)).toEqual(body(1));
+  });
+
   it("get GETs and url-encodes the id", async () => {
     const { client, calls } = makeTestClient([{ status: 200, body: { id: "a/b" } }]);
 

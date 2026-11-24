@@ -7,17 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `Refund.metadata`: the `metadata` sent when the refund was created, also in
+  `refund.*` webhooks. Always present, `null` when none was sent (including for
+  older refunds). `orders.createRefund` and `orders.createFullRefund` send
+  `metadata` when you pass it.
+- Checkout `locale` accepts `cs`, `ca`, `da`, `el`, `fi`, `hu`, `is`, `lt`, `lv`,
+  `nb`, `sk`, `sl`, `sv` and `tr`.
+- One-off product `productType` accepts `digital_download`, `online_course` and
+  `audiobook`. Response types include them too, so exhaustive `switch`es over
+  `productType` need the new cases.
+
 ### Changed
 
+- `checkouts.create` rejects `products[].trialDays` below `1` with a `RangeError`
+  before sending the request. The API now returns `422` for those values, and
+  for a `trialDays` on a one-off product; omit it or pass `null` for no trial.
+- Request fields the API marks nullable accept `null`, meaning the same as
+  omitting them: checkout `metadata`, `products[].price` and
+  `products[].trialDays`, customer and refund `metadata`, and subscription update
+  `anchor`. The request types already allowed `null`.
+- Request `metadata` must be an object of string values with at most 50 keys,
+  keys up to 40 characters and values up to 500 characters; the API returns
+  `422` otherwise.
+- Refunding an order that is not a sale (a payment-method authorization or a
+  billing-details verification charge) returns `422` with `details.orderType`.
+- The API logs request fields its spec does not define and will reject them
+  later. The SDK sends only the body you pass, and its request types allow only
+  spec-defined fields, so typed calls are unaffected.
 - Subscription plan creation and updates accept only monthly (`interval: "month"`,
   `intervalCount: 1`) or yearly (`interval: "year"`, `intervalCount: 1`) billing,
   in live and test mode; the API returns `422` for anything else. On update, send
   `interval` and `intervalCount` together. `CreateSubscriptionPlanRequest` and
   `UpdateSubscriptionPlanRequest` are narrowed to match. Response types still
   accept `day`, `week`, and higher counts, which existing plans may return.
-- Refresh the OpenAPI snapshot from docs.vatly.com (SHA-256 `be578c73…`, vatly-docs
-  `d5c09d9`). The only
-  contract change is the subscription plan interval rule above.
+- Refresh the OpenAPI snapshot from docs.vatly.com (SHA-256 `a8aff52f…`, the
+  production bundle of vatlify #2984).
 
 ## 0.3.0-alpha.4
 

@@ -43,7 +43,9 @@ const billing = {
 };
 const refund = {
   items: [{ itemId: "line_1", amount: { value: "1.23", currency: "EUR" as const } }],
+  metadata: { ticketId: "SUPPORT-12345" },
 };
+const fullRefund = { metadata: null };
 type Case = [(client: VatlyClient) => Promise<unknown>, unknown?];
 const cases: Record<string, Case> = {
   listCheckouts: [(c) => c.checkouts.list()],
@@ -87,7 +89,7 @@ const cases: Record<string, Case> = {
   createOrderInvoiceUpdateLink: [(c) => c.orders.createInvoiceUpdateLink(ids.orderId)],
   listOrderRefunds: [(c) => c.orders.listRefunds(ids.orderId)],
   createOrderRefund: [(c) => c.orders.createRefund(ids.orderId, refund), refund],
-  createFullOrderRefund: [(c) => c.orders.createFullRefund(ids.orderId), {}],
+  createFullOrderRefund: [(c) => c.orders.createFullRefund(ids.orderId, fullRefund), fullRefund],
   getOrderRefund: [(c) => c.orders.getRefund(ids.orderId, ids.refundId)],
   cancelOrderRefund: [(c) => c.orders.cancelRefund(ids.orderId, ids.refundId)],
   listOrderChargebacks: [(c) => c.orders.listChargebacks(ids.orderId)],
