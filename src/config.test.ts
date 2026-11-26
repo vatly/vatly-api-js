@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { buildClientInfoHeader, detectMode, detectRuntime, resolveConfig } from "./config.js";
+import {
+  SDK_VERSION,
+  buildClientInfoHeader,
+  detectMode,
+  detectRuntime,
+  resolveConfig,
+} from "./config.js";
 
 // Matches ^(live|test)_[\w|]{18,}$ — at least 18 chars after the prefix.
 const VALID_LIVE_KEY = "live_abcdefghij0123456789";
@@ -121,6 +127,18 @@ describe("config", () => {
       });
       expect(cfg.idempotencyKeyGenerator?.()).toBe("fixed");
     });
+  });
+
+  it("names the runtime in the default User-Agent, Bun before Node", () => {
+    const g = globalThis as { Bun?: unknown };
+    g.Bun = { version: "1.1.30" };
+    try {
+      expect(resolveConfig({ apiKey: VALID_TEST_KEY }).userAgent).toBe(
+        `getvatly/sdk/${SDK_VERSION} Bun/1.1.30`,
+      );
+    } finally {
+      g.Bun = undefined;
+    }
   });
 
   describe("Vatly-Client-Info (B4)", () => {

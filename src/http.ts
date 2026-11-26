@@ -91,7 +91,7 @@ export async function performRequest<T>(
   const baseHeaders = new Headers({
     Authorization: `Bearer ${config.apiKey}`,
     Accept: "application/json",
-    "User-Agent": config.userAgent,
+    "User-Agent": [config.userAgent, ...config.versionStrings].join(" "),
   });
   for (const headers of [config.defaultHeaders, options.headers]) {
     for (const [key, value] of Object.entries(headers ?? {})) baseHeaders.set(key, value);
@@ -109,7 +109,11 @@ export async function performRequest<T>(
   const retryable = safe || hasIdemKey;
 
   if (config.clientInfoHeader) {
-    baseHeaders.set("Vatly-Client-Info", config.clientInfoHeader);
+    // Browsers and some edge runtimes drop a custom User-Agent, so the
+    // integration chain travels here too.
+    const integrations =
+      config.versionStrings.length > 0 ? `; integrations=${config.versionStrings.join(" ")}` : "";
+    baseHeaders.set("Vatly-Client-Info", config.clientInfoHeader + integrations);
   }
 
   if (req.body !== undefined) {

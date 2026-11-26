@@ -46,8 +46,10 @@ export interface VatlyClientOptions {
   /** Optional extra headers to send with every request. */
   defaultHeaders?: Record<string, string>;
   /**
-   * SDK identifier appended to the `User-Agent` header.
-   * Defaults to `vatly-sdk-js/<version>`.
+   * Replaces the SDK's own tokens at the start of the `User-Agent` header.
+   * Defaults to `getvatly/sdk/<version>` plus the runtime, such as
+   * `getvatly/sdk/0.3.0-alpha.5 Node/22.11.0`. Tokens added with
+   * `VatlyClient.addVersionString()` still follow it.
    */
   userAgent?: string;
   /**
@@ -91,6 +93,8 @@ export interface ResolvedConfig {
   fetch: typeof fetch;
   defaultHeaders: Record<string, string>;
   userAgent: string;
+  /** `vendor/package/version` tokens appended by integrations, in the order they were added. */
+  versionStrings: string[];
   mode: "live" | "test";
   /** Pre-rendered header value, or `undefined` if disabled. */
   clientInfoHeader: string | undefined;
@@ -158,7 +162,8 @@ export function resolveConfig(options: VatlyClientOptions = {}): ResolvedConfig 
     // Workers' native fetch rejects invocation with the config object as `this`.
     fetch: fetchImpl.bind(globalThis),
     defaultHeaders: options.defaultHeaders ?? {},
-    userAgent: options.userAgent ?? `vatly-sdk-js/${SDK_VERSION}`,
+    userAgent: options.userAgent ?? defaultUserAgent(),
+    versionStrings: [],
     mode,
     clientInfoHeader: buildClientInfoHeader(options.clientInfo),
     idempotencyKeyGenerator,
@@ -252,6 +257,46 @@ export function detectRuntime(): DetectedRuntime {
     };
   }
   return { runtime: "unknown" };
+}
+
+// ---- User-Agent ------------------------------------------------------------
+
+/**
+ * The SDK's own `User-Agent` tokens: `getvatly/sdk/<version>`, named after the
+ * npm package `@getvatly/sdk` the way vatly-api-php sends
+ * `vatly/vatly-api-php/<version>`, then the runtime, such as `Node/22.11.0`.
+ */
+function defaultUserAgent(): string {
+  const runtime = runtimeVersionString(detectRuntime().runtime);
+  return runtime ? `getvatly/sdk/${SDK_VERSION} ${runtime}` : `getvatly/sdk/${SDK_VERSION}`;
+}
+
+/** `node/22.11.0` → `Node/22.11.0`; `workers` → `Cloudflare-Workers`; unknown → none. */
+function runtimeVersionString(runtime: string): string | undefined {
+  const [name, version] = runtime.split("/", 2);
+  const label = {
+    node: "Node",
+    bun: "Bun",
+    deno: "Deno",
+    edge: "EdgeRuntime",
+    workers: "Cloudflare-Workers",
+  }[name ?? ""];
+  if (!label) return undefined;
+  return version ? `${label}/${version}` : label;
+}
+
+/**
+ * Make a `vendor/package/version` token safe for both `User-Agent` and
+ * `Vatly-Client-Info`: whitespace becomes `-` (as in vatly-api-php), and
+ * control characters, `;` and `,` are removed. Capped at 128 characters.
+ */
+export function sanitizeVersionString(versionString: string): string {
+  const cleaned = versionString
+    .trim()
+    .replace(/\s+/g, "-")
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping control characters is the point
+    .replace(/[\u0000-\u001f\u007f;,]/g, "");
+  return cleaned.slice(0, 128);
 }
 
 /**

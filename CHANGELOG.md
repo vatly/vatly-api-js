@@ -5,6 +5,22 @@ All notable changes to `@getvatly/sdk` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+
+- `VatlyClient.addVersionString(token)`: packages that wrap a client append
+  their `vendor/package/version` token, such as `getvatly/fluent/0.1.0-alpha.4`,
+  to the `User-Agent` and to a new `integrations` field of `Vatly-Client-Info`.
+  `Vatly-Client-Info` is unchanged while no token is added.
+
+### Changed
+
+- The `User-Agent` starts with `getvatly/sdk/<version>` and the runtime, such as
+  `getvatly/sdk/0.3.0-alpha.5 Node/22.11.0`, instead of `vatly-sdk-js/<version>`,
+  matching the `vatly/vatly-api-php/<version>` format of the PHP SDK. A custom
+  `userAgent` option still replaces the SDK's own tokens.
+
 ## 0.3.0-alpha.5
 
 ### Added

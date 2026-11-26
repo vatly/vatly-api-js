@@ -5,6 +5,7 @@ import {
   anUpdateSubscriptionRequest,
 } from "./__fixtures__/requests.js";
 import { VatlyClient } from "./client.js";
+import { SDK_VERSION, buildClientInfoHeader } from "./config.js";
 import {
   VatlyApiError,
   VatlyAuthError,
@@ -56,8 +57,60 @@ describe("http", () => {
     const client = makeClient({ fetch });
     await client.checkouts.get("checkout_1");
     expect(calls[0]!.headers.authorization).toBe(`Bearer ${TEST_API_KEY}`);
-    expect(calls[0]!.headers["user-agent"]).toMatch(/^vatly-sdk-js\//);
+    expect(calls[0]!.headers["user-agent"]).toBe(
+      `getvatly/sdk/${SDK_VERSION} Node/${process.versions.node}`,
+    );
     expect(calls[0]!.headers.accept).toBe("application/json");
+  });
+
+  describe("version string chain", () => {
+    const sdkTokens = `getvatly/sdk/${SDK_VERSION} Node/${process.versions.node}`;
+
+    it("appends each integration's token to User-Agent and Vatly-Client-Info in order", async () => {
+      const { fetch, calls } = makeFetchSequence([{ status: 200, body: { id: "x" } }]);
+      const client = new VatlyClient({ apiKey: TEST_API_KEY, fetch, maxRetries: 0 });
+      client.addVersionString("getvatly/fluent/0.1.0-alpha.4");
+      client.addVersionString("acme/shop plugin/2.3.4");
+      client.addVersionString("getvatly/fluent/0.1.0-alpha.4");
+      client.addVersionString("  ");
+      await client.checkouts.get("checkout_1");
+
+      const chain = "getvatly/fluent/0.1.0-alpha.4 acme/shop-plugin/2.3.4";
+      expect(calls[0]!.headers["user-agent"]).toBe(`${sdkTokens} ${chain}`);
+      expect(calls[0]!.headers["vatly-client-info"]).toBe(
+        `${buildClientInfoHeader(undefined)}; integrations=${chain}`,
+      );
+    });
+
+    it("keeps Vatly-Client-Info unchanged when no integration added a token", async () => {
+      const { fetch, calls } = makeFetchSequence([{ status: 200, body: { id: "x" } }]);
+      const client = new VatlyClient({ apiKey: TEST_API_KEY, fetch, maxRetries: 0 });
+      await client.checkouts.get("checkout_1");
+      expect(calls[0]!.headers["vatly-client-info"]).toBe(buildClientInfoHeader(undefined));
+    });
+
+    it("strips characters that would break either header", async () => {
+      const { fetch, calls } = makeFetchSequence([{ status: 200, body: { id: "x" } }]);
+      const client = makeClient({ fetch });
+      client.addVersionString("evil/pkg/1;\r\nx=y,z");
+      await client.checkouts.get("checkout_1");
+      expect(calls[0]!.headers["user-agent"]).toBe(`${sdkTokens} evil/pkg/1-x=yz`);
+    });
+
+    it("follows a custom userAgent option", async () => {
+      const { fetch, calls } = makeFetchSequence([{ status: 200, body: { id: "x" } }]);
+      const client = new VatlyClient({
+        apiKey: TEST_API_KEY,
+        fetch,
+        maxRetries: 0,
+        userAgent: "MyApp/1.0",
+        clientInfo: false,
+      });
+      client.addVersionString("getvatly/fluent/0.1.0-alpha.4");
+      await client.checkouts.get("checkout_1");
+      expect(calls[0]!.headers["user-agent"]).toBe("MyApp/1.0 getvatly/fluent/0.1.0-alpha.4");
+      expect(calls[0]!.headers["vatly-client-info"]).toBeUndefined();
+    });
   });
 
   describe("Idempotency-Key", () => {

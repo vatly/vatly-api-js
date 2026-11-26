@@ -82,6 +82,24 @@ plus optional `app` / `framework` (sanitized and capped at 64 characters each).
 Set `clientInfo: false` to omit it. `dangerouslyAllowBrowser: true` bypasses the
 browser guard only; it does not make secret keys safe for browser use.
 
+The `User-Agent` names every package between your app and Vatly, one
+`vendor/package/version` token each, the format all Vatly SDKs use:
+
+```text
+getvatly/sdk/0.3.0-alpha.5 Node/22.11.0 getvatly/fluent/0.1.0-alpha.4 getvatly/better-auth/0.1.0-alpha.1
+```
+
+A package that wraps a `VatlyClient` appends its own token, named after its npm
+package without the `@`:
+
+```ts
+vatly.addVersionString("acme/vatly-plugin/1.2.0");
+```
+
+Appended tokens also go into an `integrations` field of `Vatly-Client-Info`,
+because browsers and some edge runtimes don't send a custom `User-Agent`.
+Duplicates are ignored, so wrapping one client twice adds the token once.
+
 ## Errors, retries and idempotency
 
 All HTTP errors extend `VatlyError` and expose `status`, `body`, `details`,
