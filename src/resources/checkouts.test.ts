@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { makeTestClient } from "../test-utils.js";
+import type { CheckoutDiscount, CreateCheckoutRequest } from "../types.js";
 
 const page = (data: unknown[], next: string | null = null) => ({
   data,
@@ -58,6 +59,35 @@ describe("checkouts", () => {
 
     await client.checkouts.create(body(1));
     expect(JSON.parse(calls[0]!.body!)).toEqual(body(1));
+  });
+
+  it("create sends a percentage or an amount discount, and the types reject both", async () => {
+    const { client, calls } = makeTestClient([
+      { status: 201, body: { id: "checkout_1" } },
+      { status: 201, body: { id: "checkout_2" } },
+    ]);
+    const body = (discounts: CreateCheckoutRequest["discounts"]): CreateCheckoutRequest => ({
+      redirectUrlSuccess: "https://x.example/success",
+      redirectUrlCanceled: "https://x.example/cancel",
+      products: [{ id: "one_off_product_1" }],
+      discounts,
+    });
+
+    await client.checkouts.create(body([{ percentage: 12.5, description: "Black Friday" }]));
+    await client.checkouts.create(body([{ amount: { value: "10.00", currency: "EUR" } }]));
+
+    expect(JSON.parse(calls[0]!.body!).discounts).toEqual([
+      { percentage: 12.5, description: "Black Friday" },
+    ]);
+    expect(JSON.parse(calls[1]!.body!).discounts).toEqual([
+      { amount: { value: "10.00", currency: "EUR" } },
+    ]);
+
+    // @ts-expect-error a discount takes a percentage or an amount, not both
+    const both: CheckoutDiscount = { percentage: 10, amount: { value: "1.00", currency: "EUR" } };
+    // @ts-expect-error a discount needs a percentage or an amount
+    const neither: CheckoutDiscount = { description: "Nothing off" };
+    expect([both, neither]).toHaveLength(2);
   });
 
   it("get GETs and url-encodes the id", async () => {

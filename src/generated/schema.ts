@@ -2408,6 +2408,30 @@ export interface components {
              *     ]
              */
             products: components["schemas"]["CheckoutProduct"][];
+            /**
+             * @description Discounts on the whole checkout, spread over the discountable lines in
+             *     proportion to each line's subtotal. At most one entry for now; a second returns a `422`.
+             *     Entries will apply in array order, each on what the earlier ones left.
+             *
+             *     The discount reduces the first payment of each product only; renewals
+             *     are charged the full price. For a subscription on trial, that is its
+             *     first payment after the trial, which stays discounted if its plan or
+             *     quantity changes during the trial. A percentage applies to every
+             *     product's first payment. A fixed amount is split over the same first
+             *     payments in proportion to their prices, as a percentage of the same
+             *     size would be, keeping at least the smallest unit payable today. A
+             *     checkout with tax-inclusive prices and a subscription on trial cannot
+             *     take a discount yet and returns a `422`.
+             *
+             *     The resulting order and its lines list the discount under `discounts`.
+             * @example [
+             *       {
+             *         "description": "Black Friday",
+             *         "percentage": 20
+             *       }
+             *     ]
+             */
+            discounts?: components["schemas"]["CheckoutDiscount"][] | null;
         };
         /**
          * @description A customer represents a person or organization that can make purchases.
@@ -2910,6 +2934,13 @@ export interface components {
             lines: components["schemas"]["OrderLine"][];
             /** @description Customer billing details (buyer) */
             customerDetails: components["schemas"]["BillingDetails"];
+            /**
+             * @description Every discount on the order, each listed once with the amount it takes
+             *     off all lines added up, in the order it first appears on the lines.
+             *     Empty when the order has no discount. Match an entry to its share on
+             *     each line by `id`.
+             */
+            discounts: components["schemas"]["Discount"][];
             /** @description HATEOAS links to related resources */
             links: {
                 /** @description Link to this order resource */
@@ -2955,14 +2986,20 @@ export interface components {
              * @example 1
              */
             quantity: number;
-            /** @description Price per unit before taxes */
+            /** @description Price per unit before discounts, on the product's tax basis: excluding taxes for tax-exclusive products, including them for tax-inclusive products */
             basePrice: components["schemas"]["Money"];
-            /** @description Total price including taxes (basePrice * quantity + taxes) */
+            /** @description Total price including taxes, after discounts (subtotal + taxes) */
             total: components["schemas"]["Money"];
-            /** @description Subtotal before taxes (basePrice * quantity) */
+            /** @description Subtotal excluding taxes, after discounts */
             subtotal: components["schemas"]["Money"];
             /** @description Tax breakdown by rate for this line */
             taxes: components["schemas"]["TaxSummaryItem"][];
+            /**
+             * @description This line's share of each discount, in the order they apply. Empty when
+             *     the line has no discount. `subtotal`, `taxes` and `total` are already
+             *     net of these discounts.
+             */
+            discounts: components["schemas"]["Discount"][];
             /**
              * @description Linked resource type. Initial subscription orders use
              *     `subscription_plan`; renewals and immediate updates use `subscription`.
@@ -3888,6 +3925,33 @@ export interface components {
              */
             maskedIdentifier: string | null;
         };
+        /** @description A discount: a `percentage` or a fixed `amount`, not both. */
+        CheckoutDiscount: {
+            /**
+             * @description Label shown on the checkout and the invoice.
+             * @example Black Friday
+             */
+            description?: string | null;
+            /**
+             * @description Percentage to take off, above 0 and below 100, with at most three
+             *     decimals.
+             * @example 20
+             */
+            percentage?: number | string;
+            /**
+             * @description Fixed amount to take off, in EUR, on the same basis as the products'
+             *     prices: excluding VAT on tax-exclusive products, including VAT on
+             *     tax-inclusive ones. €10.00 off a €121.00 price including VAT charges
+             *     €111.00. It must be below the subtotal of the products it discounts,
+             *     on that same basis, counting a subscription on trial at its first
+             *     payment. When the customer pays in another currency, it is converted
+             *     at checkout.
+             *
+             *     The order always reports a discount's `amount` excluding VAT, like
+             *     `subtotal`: the €10.00 above reads 8.26 at 21% VAT.
+             */
+            amount?: components["schemas"]["EurMoney"];
+        };
         /**
          * @description Request body for updating a customer's identity fields. Only `name` and
          *     `email` may be changed here — both are optional (send either or both).
@@ -4061,6 +4125,44 @@ export interface components {
         TaxSummaryItem: {
             taxRate: components["schemas"]["TaxSummaryRate"];
             /** @description Tax amount for this rate */
+            amount: components["schemas"]["Money"];
+        };
+        /**
+         * @description A discount applied to an order. Amounts exclude VAT; the line's `taxes`
+         *     already reflect the discount.
+         */
+        Discount: {
+            /**
+             * @description Identifies this discount on this order. Every line's share of a
+             *     discount and the order's entry for it carry the same id. It names one
+             *     application, not a reusable coupon: every order, and every subscription
+             *     renewal, gets new ids. `null` only on discounts applied before ids were
+             *     introduced.
+             * @example discount_KKYYk6SohKNdSqKyHAzZJ2
+             */
+            id: string | null;
+            /**
+             * @description The label sent with the discount, if any.
+             * @example Black Friday
+             */
+            description: string | null;
+            /**
+             * @description How the discount is defined: `percentage` or `fixed_amount`. More
+             *     values may be added; treat an unknown value as a discount of an
+             *     unknown kind. `null` only on discounts applied before it was recorded.
+             * @example percentage
+             */
+            discountType: string | null;
+            /**
+             * @description The percentage taken off, as a decimal string, for a `percentage`
+             *     discount. `null` for a `fixed_amount` discount.
+             * @example 20.00
+             */
+            percentage: string | null;
+            /**
+             * @description The amount taken off, excluding VAT, also when the products' prices
+             *     include VAT: €10.00 off a €121.00 price at 21% reads 8.26.
+             */
             amount: components["schemas"]["Money"];
         };
         /** @description An item to refund from an order */
@@ -6543,6 +6645,7 @@ export interface operations {
                      *             {
                      *               "id": "order_item_Mn6xBtPvKw2RjTgYcZaE",
                      *               "resource": "orderline",
+                     *               "discounts": [],
                      *               "description": "Pro Monthly Subscription",
                      *               "quantity": 1,
                      *               "basePrice": {
@@ -6574,6 +6677,7 @@ export interface operations {
                      *               "productId": "subscription_Hn5xWqVfKm8RjTgYbUcP"
                      *             }
                      *           ],
+                     *           "discounts": [],
                      *           "customerDetails": {
                      *             "fullName": "John Doe",
                      *             "companyName": "Acme Corp",
@@ -6692,6 +6796,7 @@ export interface operations {
                      *         {
                      *           "id": "order_item_Jk4pQrSvWm8NjLhYbUcP",
                      *           "resource": "orderline",
+                     *           "discounts": [],
                      *           "description": "Pro Monthly Subscription — initial checkout",
                      *           "quantity": 1,
                      *           "basePrice": {
@@ -6726,6 +6831,7 @@ export interface operations {
                      *           }
                      *         }
                      *       ],
+                     *       "discounts": [],
                      *       "customerDetails": {
                      *         "fullName": "John Doe",
                      *         "companyName": "Acme Corp",
@@ -8260,6 +8366,7 @@ export interface operations {
                      *           {
                      *             "id": "order_item_Mn6xBtPvKw2RjTgYcZaE",
                      *             "resource": "orderline",
+                     *             "discounts": [],
                      *             "description": "Pro Monthly Subscription",
                      *             "quantity": 1,
                      *             "basePrice": {
@@ -8291,6 +8398,7 @@ export interface operations {
                      *             "productId": "subscription_Hn5xWqVfKm8RjTgYbUcP"
                      *           }
                      *         ],
+                     *         "discounts": [],
                      *         "customerDetails": {
                      *           "fullName": "John Doe",
                      *           "companyName": "Acme Corp",
@@ -9543,6 +9651,7 @@ export interface operations {
                      *         {
                      *           "id": "order_item_Jk4pQrSvWm8NjLhYbUcP",
                      *           "resource": "orderline",
+                     *           "discounts": [],
                      *           "description": "Pro Monthly Subscription",
                      *           "quantity": 1,
                      *           "basePrice": {
@@ -9574,6 +9683,7 @@ export interface operations {
                      *           "productId": "subscription_Hn5xWqVfKm8RjTgYbUcP"
                      *         }
                      *       ],
+                     *       "discounts": [],
                      *       "customerDetails": {
                      *         "fullName": "John Doe",
                      *         "companyName": "Acme Corp",
