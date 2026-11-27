@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Checkout discounts: `checkouts.create` takes `discounts`, at most one entry for
+  now, each a `percentage` or a fixed EUR `amount` with an optional
+  `description`. The new `CheckoutDiscount` type allows one of `percentage` and
+  `amount`, not both. The `amount` follows the products' tax basis. A checkout
+  with tax-inclusive prices and a subscription on trial returns `422` for now.
+  Validation errors are keyed `discounts.0.*`.
+- `Order.discounts` and `OrderLine.discounts`, also in `order.*` webhooks: the
+  `Discount[]` on the order and each line's share, empty when none. `amount`
+  always excludes VAT. `discountType` is typed as `DiscountType`, which accepts
+  any string besides `percentage` and `fixed_amount`.
+
 - `VatlyClient.addVersionString(token)`: packages that wrap a client append
   their `vendor/package/version` token, such as `getvatly/fluent/0.1.0-alpha.4`,
   to the `User-Agent` and to a new `integrations` field of `Vatly-Client-Info`.
@@ -20,6 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `getvatly/sdk/0.3.0-alpha.5 Node/22.11.0`, instead of `vatly-sdk-js/<version>`,
   matching the `vatly/vatly-api-php/<version>` format of the PHP SDK. A custom
   `userAgent` option still replaces the SDK's own tokens.
+- `Order` and `OrderLine` require `discounts`, so code that builds these
+  objects itself, such as test fixtures, needs `discounts: []`.
+- Order line `subtotal`, `taxes` and `total` are net of discounts; `basePrice`
+  is the unit price before discounts.
+- `banktransfer` can be selected in test mode; only `paybybank` cannot.
 
 ## 0.3.0-alpha.5
 

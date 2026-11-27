@@ -8,7 +8,36 @@ type Schemas = components["schemas"];
 
 export type Checkout = Schemas["Checkout"];
 export type CheckoutProduct = Schemas["CheckoutProduct"];
-export type CreateCheckoutRequest = Schemas["CreateCheckoutRequest"];
+
+/**
+ * A discount sent with `checkouts.create`: a `percentage` or a fixed EUR
+ * `amount`, never both. The `amount` is on the products' tax basis (including
+ * VAT on tax-inclusive products, excluding it on tax-exclusive ones).
+ */
+export type CheckoutDiscount = Omit<Schemas["CheckoutDiscount"], "percentage" | "amount"> &
+  (
+    | { percentage: number | string; amount?: never }
+    | { amount: Schemas["EurMoney"]; percentage?: never }
+  );
+
+export type CreateCheckoutRequest = Omit<Schemas["CreateCheckoutRequest"], "discounts"> & {
+  /** At most one entry for now; the API returns `422` for more. */
+  discounts?: CheckoutDiscount[] | null;
+};
+
+/**
+ * How a discount is defined. More values may be added, so handle an unknown
+ * value as a discount of an unknown kind.
+ */
+export type DiscountType = "percentage" | "fixed_amount" | (string & {});
+
+/**
+ * A discount on an order or order line. `amount` always excludes VAT.
+ * `id`, `discountType` and `percentage` are `null` on older discounts.
+ */
+export type Discount = Omit<Schemas["Discount"], "discountType"> & {
+  discountType: DiscountType | null;
+};
 
 export type Customer = Schemas["Customer"];
 export type CustomerListParams = NonNullable<operations["listCustomers"]["parameters"]["query"]>;

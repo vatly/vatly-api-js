@@ -17,6 +17,7 @@ For all fields and options, see the [Orders API reference](https://docs.vatly.co
 | `refundableSubtotal` | `Money` | Net amount still refundable. |
 | `taxSummary` | `array` | Per-rate VAT breakdown. |
 | `lines` | `OrderLine[]` | Line items, incl. `productType` / `productId` and `relatedResources`. |
+| `discounts` | `Discount[]` | Every discount on the order, totalled over its lines. Empty when none. |
 | `invoiceNumber` | `string \| null` | Assigned once the invoice is issued. |
 | `paymentMethod` | `string \| null` | Payment method used. |
 | `metadata` | `object \| null` | Custom metadata carried from the checkout. |
@@ -43,6 +44,39 @@ for (const line of order.lines) {
   const subscriptionId = line.relatedResources?.subscriptionId; // string | null | undefined
   if (subscriptionId) {
     const subscription = await vatly.subscriptions.get(subscriptionId);
+  }
+}
+```
+
+### Discounts
+
+`order.discounts` lists each discount once, with the amount it takes off all
+lines together. `lines[].discounts` holds each line's share, matched to the
+order's entry by `id`. Both are empty arrays when there is no discount, also in
+`order.*` webhooks.
+
+- `amount` always excludes VAT, like `subtotal`, also when the products' prices
+  include VAT: €10.00 off a €121.00 price at 21% reads `8.26`.
+- A line's `subtotal`, `taxes` and `total` are already net of its discounts;
+  `basePrice` is the unit price before discounts.
+- `discountType` is `percentage` or `fixed_amount`, but more values may be
+  added. The `DiscountType` type accepts any string, so handle an unknown value.
+- `percentage` is a decimal string such as `"20.00"`, `null` for a
+  `fixed_amount` discount.
+- `id` names this application on this order, not a reusable coupon. `id` and
+  `discountType` are `null` only on discounts applied before they were recorded.
+
+```ts
+for (const discount of order.discounts) {
+  switch (discount.discountType) {
+    case "percentage":
+      console.log(`${discount.percentage}% off: ${discount.amount.value}`);
+      break;
+    case "fixed_amount":
+      console.log(`${discount.amount.value} off`);
+      break;
+    default:
+      console.log(`Discount of ${discount.amount.value}`);
   }
 }
 ```
